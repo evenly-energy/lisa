@@ -1,0 +1,77 @@
+# Lisa Development Guide
+
+## What is Lisa?
+Autonomous Linear ticket implementer. Reads ticket → plans steps → implements with Claude Code → tests → reviews → commits. Tracks all assumptions in Linear comments.
+
+## Architecture
+
+```
+src/lisa/
+├── cli.py           # Entry point
+├── clients/         # claude.py (CLI wrapper), linear.py (GraphQL)
+├── phases/          # Core loop: planning → work → verify → conclusion
+├── models/          # PlanStep, Assumption, WorkState (FSM), WorkContext
+├── state/           # Linear comment persistence
+├── git/             # Branch/commit/worktree operations
+├── config/          # Load prompts.yaml and schemas.yaml
+├── ui/              # Colored output, curses assumption editor
+├── prompts/         # Default prompt templates (YAML)
+└── schemas/         # JSON schemas for structured Claude output
+```
+
+## Key Files
+
+- `cli.py` - Argument parsing, main() orchestration
+- `phases/work.py` - State machine: SELECT_STEP → EXECUTE_WORK → VERIFY → COMMIT → SAVE_STATE
+- `phases/verify.py` - Test/review/format/coverage phases
+- `phases/planning.py` - Claude analyzes ticket → plan steps
+- `clients/claude.py` - All Claude CLI interactions, token tracking
+- `prompts/default.yaml` - Default prompts (override with .lisa/prompts.yaml)
+
+## Patterns
+
+### State Machine (work.py)
+WorkState enum drives the loop. Each handler returns next state.
+States: SELECT_STEP → EXECUTE_WORK → HANDLE_ASSUMPTIONS → CHECK_COMPLETION → VERIFY_STEP → COMMIT_CHANGES → SAVE_STATE → (loop or ALL_DONE)
+
+### Assumptions
+- Planning: P.1, P.2, ... (from planning phase)
+- Work: 1.1, 1.2, 2.1, ... (iteration.index)
+- Stored in Linear comment + git trailers
+
+### Config Override
+Project can override defaults with `.lisa/prompts.yaml`. Loaded in `config/prompts.py`.
+
+## Commands
+
+```bash
+# Dev install
+uv pip install -e ".[dev]"
+
+# Run on ticket
+lisa ENG-123
+
+# Lint
+ruff check src/
+ruff format src/
+```
+
+## Environment
+- `LINEAR_API_KEY` required
+- Python 3.11+
+
+## Testing Note
+Lisa runs tests for *target projects* (via `verify.py`), not itself. Test commands come from `prompts/default.yaml` or project's `.lisa/prompts.yaml`.
+
+## Adding New Phases
+1. Create `phases/newphase.py` with `run_newphase()`
+2. Add to `STATE_HANDLERS` dict in `work.py` if part of main loop
+3. Or call directly from `cli.py` for standalone phases
+4. Add prompts to `prompts/default.yaml` if Claude interaction needed
+5. Add schemas to `schemas/default.yaml` for structured output
+
+## Conventions
+- All Claude calls via `clients/claude.py` (claude() or work_claude())
+- Structured output via JSON schemas
+- Backwards compat: reads both `Lisa-*` and `Tralph-*` git trailers
+- No push by default (use --push flag)

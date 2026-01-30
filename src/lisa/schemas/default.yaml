@@ -1,0 +1,313 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+
+# JSON schemas for structured outputs in tralph
+# Used with claude --json-schema for guaranteed valid output
+
+planning:
+  type: object
+  additionalProperties: false
+  properties:
+    exploration:
+      type: object
+      additionalProperties: false
+      description: "Findings from codebase exploration"
+      properties:
+        patterns:
+          type: array
+          description: "Patterns discovered in codebase (e.g., Webhook Controller+Service pattern)"
+          items:
+            type: string
+        relevant_modules:
+          type: array
+          description: "Modules that will be touched by this work"
+          items:
+            type: string
+        similar_implementations:
+          type: array
+          description: "Similar implementations to use as templates"
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              file:
+                type: string
+                description: "File path of the similar implementation"
+              relevance:
+                type: string
+                description: "Why this file is useful as a reference"
+            required:
+              - file
+              - relevance
+    steps:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          id:
+            type: integer
+            description: Step number (1, 2, 3, etc.)
+          ticket:
+            type: string
+            description: Linear ticket ID to associate with this step (subtask ID or main ticket ID)
+          description:
+            type: string
+            description: Brief actionable description of what this step does
+          files:
+            type: array
+            description: Files to create/modify/delete in this step
+            items:
+              type: object
+              additionalProperties: false
+              properties:
+                op:
+                  type: string
+                  enum: [create, modify, delete]
+                  description: Operation type
+                path:
+                  type: string
+                  description: File path relative to project root
+                template:
+                  type: string
+                  description: For create - reference file to follow as pattern (optional)
+                detail:
+                  type: string
+                  description: What changes to make or specifics to include (optional)
+              required:
+                - op
+                - path
+        required:
+          - id
+          - ticket
+          - description
+    assumptions:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          id:
+            type: string
+            description: Assumption ID (P.1, P.2 for planning phase)
+          selected:
+            type: boolean
+            description: Whether this assumption/approach was chosen
+          statement:
+            type: string
+            description: Brief neutral description of the decision/assumption
+          rationale:
+            type: string
+            description: Why this choice was made over alternatives
+        required:
+          - id
+          - selected
+          - statement
+  required:
+    - steps
+    - assumptions
+
+work:
+  type: object
+  additionalProperties: false
+  properties:
+    step_done:
+      type:
+        - integer
+        - "null"
+      description: Step number that was completed, or null if step is still in progress
+    blocked:
+      type:
+        - string
+        - "null"
+      description: Reason if blocked and cannot proceed, or null if not blocked
+    assumptions:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          id:
+            type: integer
+            description: Assumption number within this work phase
+          selected:
+            type: boolean
+            description: Whether this assumption/approach was chosen
+          statement:
+            type: string
+            description: Brief neutral description of the decision/assumption
+          rationale:
+            type: string
+            description: Why this choice was made
+        required:
+          - id
+          - selected
+          - statement
+  required:
+    - step_done
+    - blocked
+    - assumptions
+
+test_extraction:
+  type: object
+  additionalProperties: false
+  properties:
+    passed_count:
+      type:
+        - integer
+        - "null"
+      description: Number of tests passed, null if not applicable (lint, build errors)
+    failed_count:
+      type:
+        - integer
+        - "null"
+      description: Number of tests failed, null if not applicable
+    failed_tests:
+      type: array
+      items:
+        type: string
+      description: Failed test class names for targeted retries, empty if not applicable
+    extracted_output:
+      type: string
+      description: Essential failure info (assertions, errors, key stack traces)
+    summary:
+      type: string
+      description: "Short summary like '3 failed, 47 passed' or 'ktlint: 5 errors'"
+  required:
+    - passed_count
+    - failed_count
+    - failed_tests
+    - extracted_output
+    - summary
+
+review:
+  type: object
+  additionalProperties: false
+  properties:
+    approved:
+      type: boolean
+      description: Whether the review passed
+    findings:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          category:
+            type: string
+            enum: [intent, boundaries, quality, assumptions]
+          status:
+            type: string
+            enum: [pass, issue, fixed]
+          detail:
+            type: string
+            description: Brief description of what was checked or issue found
+        required: [category, status, detail]
+    summary:
+      type: string
+      minLength: 1
+      description: One-line summary of review outcome
+  required: [approved, findings, summary]
+
+review_light:
+  type: object
+  additionalProperties: false
+  properties:
+    approved:
+      type: boolean
+      description: Whether the review passed
+    issue:
+      type: [string, "null"]
+      description: Brief issue description if not approved, null if approved
+  required: [approved, issue]
+
+slug:
+  type: object
+  additionalProperties: false
+  properties:
+    slug:
+      type: string
+      pattern: "^[a-z0-9-]+$"
+      description: Lowercase alphanumeric with hyphens only, no other characters
+  required: [slug]
+
+conclusion:
+  type: object
+  additionalProperties: false
+  properties:
+    text:
+      type: string
+      description: Very short conclusion, max 10 words, lowercase, no period
+  required: [text]
+
+conclusion_summary:
+  type: object
+  additionalProperties: false
+  properties:
+    purpose:
+      type: string
+      description: 1-2 sentences explaining what problem this solves
+    entry_point:
+      type: string
+      description: "How code is triggered, e.g., POST /api/devices → DeviceController.create()"
+    flow:
+      type: string
+      description: Numbered steps from entry to exit with code references and snippets
+    error_handling:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          location:
+            type: string
+            description: "Class.method() where handled, e.g., DeviceService.register()"
+          description:
+            type: string
+            description: What can go wrong and how it's handled
+        required: [location, description]
+    key_review_points:
+      type: array
+      description: Code that's easy to get wrong
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          location:
+            type: string
+            description: "File and function/class, e.g., DeviceService.register()"
+          what_it_does:
+            type: string
+            description: Plain English explanation
+          risk:
+            type: string
+            description: What breaks if wrong?
+        required: [location, what_it_does, risk]
+    tests:
+      type: object
+      additionalProperties: false
+      properties:
+        covered:
+          type: array
+          items:
+            type: string
+          description: "What's tested, e.g., Happy path: device creation"
+        missing:
+          type: array
+          items:
+            type: string
+          description: "What's not tested, e.g., malformed JSON handling"
+      required: [covered]
+    subtask_mapping:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          ticket:
+            type: string
+            description: Subtask ticket ID
+          implementation:
+            type: string
+            description: What was done for this subtask
+        required: [ticket, implementation]
+  required: [purpose, entry_point, flow, error_handling, key_review_points]

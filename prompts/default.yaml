@@ -1,0 +1,466 @@
+# Lisa prompts and configuration
+# Override this file by placing your own prompts.yaml in .lisa/ directory
+
+# Project configuration
+config:
+  # Path patterns for detecting file categories
+  # Used by test commands with conditions like "backend" or "frontend"
+  path_patterns:
+    frontend: "frontend/**"
+    backend: "**"  # Everything else (checked after frontend)
+
+  # File extensions for frontend detection (beyond path pattern)
+  frontend_extensions: [".ts", ".tsx", ".js", ".jsx"]
+
+  # Fallback tools when project settings not available
+  # Used with --fallback-tools flag
+  fallback_tools: >-
+    Read Edit Write Grep Glob Skill
+    Bash(git:*) Bash(./gradlew:*) Bash(pnpm:*) Bash(npm:*)
+    Bash(cd:*) Bash(ls:*) Bash(mkdir:*) Bash(rm:*)
+
+  # Test filter command template (for retrying specific tests)
+  # Use {test_filters} placeholder for the generated filter args
+  test_filter_templates:
+    "./gradlew test": "./gradlew test {test_filters}"
+
+  # How to generate filter args for each test runner
+  # Use {test_name} placeholder
+  test_filter_format: '--tests "*{test_name}"'
+
+conclusion:
+  description: Generate a short conclusion for success/warning messages
+  template: |
+    Generate a very short conclusion (max 10 words, lowercase, no period).
+    Context: {context}
+    Output JSON: {{"text": "your conclusion here"}}
+
+conclusion_summary:
+  description: Generate code review guide explaining what the code does
+  template: |
+    Generate a code review guide that helps a developer UNDERSTAND this implementation.
+
+    ## Ticket: {ticket_id} - {title}
+    {description}
+
+    ## Context
+    {exploration_context}
+
+    ## Plan Steps
+    {plan_steps_summary}
+
+    ## Assumptions
+    {assumptions_summary}
+
+    ## Changed Files
+    {changed_files}
+
+    ## Commits
+    {commit_log}
+
+    ## CRITICAL: You MUST read the files
+    Use the Read tool to read EACH file in "Changed Files" above.
+    Do NOT summarize based on file names alone - read the actual code.
+
+    After reading all files, generate:
+
+    ---
+
+    **Purpose**
+    1-2 sentences: What problem does this solve?
+
+    **Entry Point**
+    How is this code triggered? Examples:
+    - `POST /api/v1/devices` → DeviceController.create()
+    - `@ApplicationModuleListener` on DeviceRegisteredEvent
+    - `@Scheduled(cron = "...")` in SyncJob
+
+    **Flow**
+    Numbered steps from entry to exit. Include the actual code path:
+    1. DeviceController.create() receives request
+       → validates request body (name required, externalId required)
+    2. DeviceService.register() called
+       → checks repository.findByExternalId() for duplicates
+       → if exists: throws DuplicateDeviceException
+    3. Creates Device entity, saves to DB
+    4. Publishes DeviceRegisteredEvent
+    5. Returns 201 with device ID
+
+    Include relevant code snippets for non-obvious logic.
+
+    **Error Handling**
+    WHERE is each error handled and what happens?
+    - `DeviceController.create()`: Validation failure → 400 Bad Request
+    - `DeviceService.register()`: Duplicate device → catches DuplicateDeviceException → 409 Conflict
+    - `DeviceService.register()`: DB error → propagates to global handler → 500
+
+    **Key Review Points**
+    Code that's easy to get wrong. For each:
+    - File and function/class name
+    - What it does
+    - What breaks if wrong
+
+    **Test Coverage**
+    What's tested vs what's missing:
+    - ✓ Happy path: creates device
+    - ✓ Duplicate rejection
+    - ✗ Missing: malformed JSON handling
+    - ✗ Missing: external API timeout
+
+    **Subtasks** (if any)
+    Map subtask IDs to what was implemented.
+
+    ---
+
+    IMPORTANT: A reviewer should understand the code behavior from this guide alone.
+    Focus on WHAT HAPPENS, not just where code lives.
+
+slug:
+  description: Generate a git branch slug from ticket title/description
+  template: |
+    Generate a git branch slug. Rules:
+    - Max {max_len} chars
+    - Lowercase, hyphens only (a-z, 0-9, -)
+    - Capture the essence, abbreviate smartly
+
+    Title: {title}
+    Description: {description}
+
+    Output JSON: {{"slug": "your-slug-here"}}
+
+planning:
+  description: Analyze ticket and create implementation steps with exploration findings
+  template: |
+    Analyze this Linear ticket and create an implementation plan.
+
+    ## Ticket: {ticket_id} - {title}
+
+    {description}
+
+    ## Existing Subtasks
+    {subtask_list}
+
+    ## Phase 1: Explore
+    FIRST, thoroughly explore the codebase to understand:
+    1. **Patterns**: How does this codebase handle similar features?
+    2. **Modules**: Which modules will this work touch?
+    3. **Templates**: Find similar implementations to use as reference
+
+    Use Glob, Grep, Read tools. Take your time - good exploration prevents bad plans.
+    Document what you find and any decisions you make as assumptions (P.x).
+
+    ## Phase 2: Plan
+    Break work into 3-8 meaningful steps (30-60 min each).
+    Each step should produce a WORKING, TESTABLE increment.
+
+    Batch related operations - don't make separate steps for:
+    - Creating a file and its test
+    - Adding multiple related fields/methods
+    - Creating entity + repository + service for same feature
+
+    Associate each step with a subtask if one exists that covers that work.
+
+    **For each step, specify files array** with concrete paths:
+    - `{{"op": "create", "path": "src/.../Foo.kt", "template": "src/.../Bar.kt"}}` — follow pattern
+    - `{{"op": "create", "path": "src/.../Foo.kt", "detail": "enum with X, Y, Z values"}}` — no template needed
+    - `{{"op": "create", "path": "src/.../Foo.kt", "template": "src/.../Bar.kt", "detail": "add extra validation"}}` — pattern + specifics
+    - `{{"op": "modify", "path": "src/.../Service.kt", "detail": "add createFoo method"}}`
+    - `{{"op": "delete", "path": "src/.../OldFoo.kt", "detail": "replaced by new entity"}}`
+
+    This saves the work phase from re-discovering file locations.
+
+    ## Assumptions
+    Document decisions made during exploration and planning.
+    Use P.x IDs (P.1, P.2, etc.) for planning-phase assumptions.
+
+    Each assumption needs:
+    - id: String like "P.1", "P.2" etc.
+    - selected: true for the option you chose, false for alternatives you rejected
+    - statement: Brief neutral description of the decision
+    - rationale: Why this choice was made
+
+    ## Output Format
+    Output your response as JSON with exploration, steps, and assumptions.
+
+    Example:
+    ```json
+    {{
+      "exploration": {{
+        "patterns": ["Webhook: Controller+Service pattern", "Entity: model/ package"],
+        "relevant_modules": ["nodesintegration", "webhooks"],
+        "similar_implementations": [{{"file": "OrderWebhookController.kt", "relevance": "template for webhook handling"}}]
+      }},
+      "steps": [
+        {{
+          "id": 1,
+          "ticket": "{example_subtask}",
+          "description": "Create Trade entity and repository",
+          "files": [
+            {{"op": "create", "path": "src/.../model/Trade.kt", "template": "src/.../model/Order.kt"}},
+            {{"op": "create", "path": "src/.../repository/TradeRepository.kt", "template": "src/.../repository/OrderRepository.kt"}}
+          ]
+        }}
+      ],
+      "assumptions": [
+        {{"id": "P.1", "selected": true, "statement": "Use existing webhook infrastructure", "rationale": "Found OrderWebhookController pattern"}},
+        {{"id": "P.2", "selected": true, "statement": "Trade entity in nodesintegration module", "rationale": "Follows Order pattern"}}
+      ]
+    }}
+    ```
+    - Each step description should be actionable and specific
+    - The ticket field links the step to a Linear issue for commit attribution
+    - Use subtask IDs when the step belongs to that subtask's scope
+    - Use main ticket ID ({ticket_id}) for steps that don't fit any subtask
+    - Target 3-8 steps for most tickets, not 15-20
+
+work:
+  description: Main work prompt for implementing a step
+  template: |
+    You are working on Linear ticket {ticket_id} in an autonomous Ralph loop.
+
+    ## Ticket: {title}
+
+    ### Description
+    {description}
+    {exploration_context}
+    {files_context}
+    {subtask_context}
+    {prior_context}
+    {iteration_context}
+    ## Plan
+    {plan_checklist}
+
+    ## Current Step: {current_step}. {step_desc}
+
+    Work on this step. Focus ONLY on completing this specific step.
+
+    ## CRITICAL: Assumptions Reflection
+    Before outputting your final JSON, you MUST pause and reflect:
+
+    **What decisions did you make?** Code changes often involve choices:
+    - Which pattern/approach to use (there were alternatives)
+    - Which files to modify vs create new
+    - How to handle edge cases
+    - What to include/exclude from scope
+
+    If you made non-obvious decisions, capture them as assumptions.
+
+    Each assumption needs:
+    - id: Sequential number (1, 2, 3...)
+    - selected: true (you chose this approach)
+    - statement: "Used X pattern" / "Modified Y instead of Z" / "Handled edge case by..."
+    - rationale: Brief why
+
+    Empty array is fine if the step was straightforward with no real decisions to document.
+
+    ## Output Format
+    Output your response as JSON with these fields:
+    - step_done: Set to {current_step} when ALL code changes are complete and verified. Set to null if still in progress.
+    - blocked: Set to a reason string if blocked and cannot proceed. Set to null if not blocked.
+    - assumptions: Array of assumptions made (see above). Include ALL decisions/choices you made.
+
+    Examples:
+    Step complete: {{"step_done": {current_step}, "blocked": null, "assumptions": [{{"id": 1, "selected": true, "statement": "Extended existing DeviceService", "rationale": "Follows codebase patterns"}}, {{"id": 2, "selected": true, "statement": "Added null check for optional field", "rationale": "API may return null"}}]}}
+    In progress (no code yet): {{"step_done": null, "blocked": null, "assumptions": []}}
+    Blocked: {{"step_done": null, "blocked": "Missing API credentials", "assumptions": []}}
+
+    ## When to Signal Completion
+    Set step_done to {current_step} when you have:
+    1. Made the code changes for this step
+    2. Verified changes compile/work (quick sanity check)
+    3. The step's intent is addressed
+
+    Keep step_done as null if:
+    - Still exploring/reading code without changes
+    - Haven't written the main implementation yet
+    - Obvious gaps remain in the implementation
+
+    ## Guidelines
+    - Make real code changes, not just plans
+    - Keep changes focused on this one step
+    - Run quick sanity checks but don't run full test suite
+
+    ## Blocked vs Partial Completion
+
+    Use blocked ONLY for fundamental issues:
+    - Missing API credentials/secrets
+    - Wrong architecture that requires complete rethink
+    - Dependency on code that doesn't exist
+
+    Do NOT use blocked for recoverable issues:
+    - Permission denied on one operation → complete everything else, note limitation
+    - File deletion needed → use `rm` to delete. Only add MANUAL assumption if deletion fails
+    - One test failing → fix what you can, note remaining issues
+
+    For recoverable issues:
+    1. Complete as much of the step as possible
+    2. Add assumption with selected=false: "MANUAL: [what couldn't be done]"
+    3. Set step_done if main work is complete
+
+    ## Testing Requirements (CRITICAL)
+    - Write tests alongside implementation (TDD preferred)
+    - Every new public method needs tests
+    - Cover happy path + error paths
+    - Target 80%+ coverage on new code (will be enforced at end)
+
+test:
+  description: Test commands run directly by tralph (not Claude)
+  extract_prompt: |
+    Extract failure info from this test/lint output.
+
+    Return JSON with:
+    - passed_count: tests passed (null if not a test run, e.g., lint)
+    - failed_count: tests failed (null if not a test run)
+    - failed_tests: list of failed test CLASS names like ["UserServiceTest", "AuthTest"] (empty if lint/build)
+    - extracted_output: essential failure info (assertions, error messages, key stack traces) - max 5000 chars
+    - summary: short summary like "3 failed, 47 passed: UserServiceTest" or "ktlint: 5 formatting errors"
+
+    {output}
+  commands:
+    - name: "Backend tests"
+      run: "./gradlew test"
+      condition: "backend"
+    - name: "Backend lint"
+      run: "./gradlew ktlintFormat && ./gradlew ktlintCheck"
+      condition: "backend"
+    - name: "Backend static analysis"
+      run: "./gradlew detekt"
+      condition: "backend"
+    - name: "Frontend tests"
+      run: ".claude/scripts/run-frontend-tests.sh"
+      condition: "frontend"
+    - name: "Frontend lint"
+      run: "cd frontend && pnpm lint:check"
+      condition: "frontend"
+  fix_prompt: |
+    Fix this {command_name} failure.
+
+    ## What we're implementing
+    {task_description}
+
+    ## Current step
+    {step_desc}
+
+    ## Code changes (git diff)
+    ```diff
+    {git_diff}
+    ```
+
+    ## Error output
+    {output}
+
+    The error is likely in the code shown above. Fix it.
+
+    After fixing, run the failing test(s) to verify:
+    - Backend: ./gradlew test --tests "*TestClassName"
+    - Frontend: cd frontend && pnpm test <test-file>
+
+review:
+  description: Code review to check quality and intent alignment
+  template: |
+    Review the code changes for: {task_title}
+
+    ## Task Intent
+    {task_description}
+    {assumptions_section}
+    ## Review Checklist
+
+    ### 1. Intent Alignment (MOST IMPORTANT)
+    - Does the code implement this specific task (not the whole ticket)?
+    - Is the task's intent fulfilled by the changes?
+    - Is there over-engineering beyond what this task asked for?
+
+    ### 2. System Boundaries & API Specs
+    - Check ticket description for boundary definitions (which APIs, services, modules to use)
+    - Code stays within boundaries defined in ticket - doesn't reach into unspecified systems
+    - Module boundaries respected (public API vs internal packages)
+    - If ticket mentions OR code touches NODES API: load `/nodes-api` skill (if available), verify implementation matches spec
+    - If ticket mentions OR code touches OpenADR: load `/openadr-api` skill (if available), verify VEN/VTN patterns match spec
+    - If ticket mentions OR code touches Axle Energy or Easee devices/state: load `/axle-energy-api` skill (if available), verify integration matches spec
+    - JSON casing matches API expectations (snake_case for external APIs)
+
+    ### 3. Code Quality
+    - Code follows project conventions (check CLAUDE.md if unsure)
+    - No obvious security vulnerabilities
+    - **Tests: Every new public method must have tests. If test files missing for new prod code, set approved=false**
+    - Tests exist and are meaningful (not just coverage padding)
+    - No debug code, orphan TODOs, or commented-out code
+    - Error handling is appropriate (no swallowed exceptions)
+    - Run architecture tests if backend changed: ./gradlew test --tests "*ArchitectureTest*"
+
+    ### 4. Assumption Validation (if assumptions provided)
+    - Match check: Does implementation actually follow documented assumptions?
+    - Reasonableness: Were the decisions sensible given the task context?
+    - Scope creep: Any undocumented decisions or work outside planned scope?
+
+    ## Instructions
+    - Use git diff to see changes
+    - Read the changed files
+    - Compare implementation against the task intent above
+    - If code interacts with external APIs, use /nodes-api, /openadr-api, or /axle-energy-api skills (if available) to load specs
+    - Check test coverage for new code
+    - If assumptions were provided, validate each one
+
+    ## Output Format
+    Output your response as JSON with:
+    - approved: true if review passes, false if issues found
+    - findings: array of what was checked/found, each with:
+      - category: "intent" | "boundaries" | "quality" | "assumptions"
+      - status: "pass" | "issue" | "fixed"
+      - detail: brief description
+    - summary: one-line summary (e.g., "intent aligned, 2 quality issues fixed")
+
+    Example:
+    {{"approved": true, "findings": [{{"category": "intent", "status": "pass", "detail": "implements task scope correctly"}}, {{"category": "quality", "status": "fixed", "detail": "removed debug println"}}], "summary": "approved with 1 fix applied"}}
+
+    IMPORTANT: If code doesn't match task intent, set approved=false.
+
+fix:
+  description: Fix issues from code review
+  template: |
+    Fix these code review issues:
+
+    {issues}
+
+    ## Instructions
+    - Make the fixes
+    - Verify they work by reading the code
+    - Don't run tests yet (that comes next)
+
+review_light:
+  description: Fast sanity check for loop iterations (used by verify_step)
+  template: |
+    Quick review of changes for: {task_title}
+
+    Check ONLY these basics (be fast, not thorough):
+    1. Code compiles/parses correctly (no syntax errors visible)
+    2. No obvious bugs or typos
+    3. Changes are related to the task (not random edits)
+    4. No debug code left behind (println, console.log, etc.)
+
+    Use git diff to see changes. Be quick - this is a sanity check, not a deep review.
+
+    Output JSON:
+    - If approved: {{"approved": true, "issue": null}}
+    - If issue found: {{"approved": false, "issue": "brief description"}}
+
+coverage_fix:
+  description: Add tests to reach 80% coverage
+  run: "./gradlew koverVerify"
+  template: |
+    Coverage verification failed (below 80%).
+
+    ## Changed Files
+    {changed_files}
+
+    ## Error Output
+    {error_output}
+
+    ## Instructions
+    1. Run: ./gradlew koverHtmlReport
+    2. Check build/reports/kover/html/ for uncovered lines
+    3. Add meaningful tests for uncovered code
+    4. Run: ./gradlew koverVerify to check
+
+    Focus on: public methods, branches, error paths.
+    Do NOT pad with meaningless tests.
