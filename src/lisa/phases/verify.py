@@ -17,6 +17,7 @@ from lisa.models.state import RunConfig
 from lisa.phases.constants import (
     DEFAULT_TEST_TIMEOUT,
     MAX_FIX_ATTEMPTS,
+    MAX_ISSUE_REPEATS,
     TURNS_LIGHTWEIGHT,
     TURNS_REVIEW,
     calc_turns,
@@ -152,9 +153,7 @@ def run_test_phase(
         if failed_tests:
             for base_cmd, template in filter_templates.items():
                 if base_cmd in run_cmd:
-                    test_filters = " ".join(
-                        filter_format.format(test_name=t) for t in failed_tests
-                    )
+                    test_filters = " ".join(filter_format.format(test_name=t) for t in failed_tests)
                     run_cmd = template.format(test_filters=test_filters)
                     cmd_name = f"{cmd_name} ({len(failed_tests)} failing)"
                     break
@@ -173,7 +172,11 @@ def run_test_phase(
                 timeout=DEFAULT_TEST_TIMEOUT,
             )
         except subprocess.TimeoutExpired as e:
-            output = (e.stdout or "")[-5000:] if e.stdout else f"Test command timed out after {DEFAULT_TEST_TIMEOUT}s"
+            output = (
+                (e.stdout or "")[-5000:]
+                if e.stdout
+                else f"Test command timed out after {DEFAULT_TEST_TIMEOUT}s"
+            )
             failure = TestFailure(
                 command_name=cmd_name,
                 output=output,
@@ -372,9 +375,7 @@ def run_test_fix_phase(
 
     # Capture git diff for fix context
     diff_result = subprocess.run(["git", "diff", "HEAD"], capture_output=True, text=True)
-    git_diff = (
-        diff_result.stdout[:15000] if diff_result.returncode == 0 else "(no diff available)"
-    )
+    git_diff = diff_result.stdout[:15000] if diff_result.returncode == 0 else "(no diff available)"
     if len(diff_result.stdout) > 15000:
         git_diff += "\n... (truncated)"
 
@@ -438,7 +439,7 @@ def verify_step(
 
     # Review + fix loop (lightweight haiku review, haiku fixes, early exit on repeated issues)
     review_issues: list[str] = []
-    seen_issues: set[str] = set()
+    issue_counts: dict[str, int] = {}
     for attempt in range(MAX_FIX_ATTEMPTS):
         # Use lightweight (haiku) review in loop - fast sanity check
         review_result = run_review_phase(
@@ -458,14 +459,14 @@ def verify_step(
 
         # Needs fixes - track and check for repeats
         issue = review_result["summary"][:100]
+        issue_counts[issue] = issue_counts.get(issue, 0) + 1
 
-        # Early exit if same issue repeats - let next iteration handle it
-        if issue in seen_issues:
-            warn("Same issue repeated, deferring to next iteration")
+        # Only exit after same issue repeats MAX_ISSUE_REPEATS times
+        if issue_counts[issue] >= MAX_ISSUE_REPEATS:
+            warn(f"Issue repeated {issue_counts[issue]}x, deferring to next iteration")
             return VerifyResult(
                 passed=False, review_issues=review_issues + [issue], fix_attempts=attempt + 1
             )
-        seen_issues.add(issue)
         review_issues.append(issue)
 
         # Use haiku for fixes in loop (usually simple fixes)
@@ -480,7 +481,9 @@ def verify_step(
         )
 
         # Re-test after fix (haiku for test fixes)
-        test_failure = run_test_phase(step_desc, total_start, model, yolo, fallback_tools, debug=debug)
+        test_failure = run_test_phase(
+            step_desc, total_start, model, yolo, fallback_tools, debug=debug
+        )
         for test_fix_attempt in range(MAX_FIX_ATTEMPTS):
             if test_failure is None:
                 break

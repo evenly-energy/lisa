@@ -104,6 +104,10 @@ class WorkContext:
     # Config
     config: RunConfig
 
+    # Verification retry tracking (defaults at end for dataclass compat)
+    verify_attempts: int = 0
+    max_verify_attempts: int = 3
+
     @property
     def iteration(self) -> int:
         """Current absolute iteration number."""

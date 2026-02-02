@@ -13,7 +13,13 @@ from lisa.config.schemas import get_schemas
 from lisa.git.commit import get_changed_files, get_diff_summary, git_commit, summarize_for_commit
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import WorkContext, WorkState
-from lisa.phases.constants import TURNS_QUICK, TURNS_WORK, MAX_FIX_ATTEMPTS, calc_turns
+from lisa.phases.conclusion import (
+    format_conclusion_markdown,
+    print_conclusion,
+    run_conclusion_phase,
+    save_conclusion_to_linear,
+)
+from lisa.phases.constants import MAX_FIX_ATTEMPTS, TURNS_QUICK, TURNS_WORK, calc_turns
 from lisa.phases.verify import (
     detect_file_categories,
     run_coverage_fix_phase,
@@ -22,12 +28,6 @@ from lisa.phases.verify import (
     run_review_phase,
     run_test_phase,
     verify_step,
-)
-from lisa.phases.conclusion import (
-    format_conclusion_markdown,
-    print_conclusion,
-    run_conclusion_phase,
-    save_conclusion_to_linear,
 )
 from lisa.state.comment import save_state
 from lisa.state.git import fetch_git_state
@@ -153,9 +153,7 @@ def handle_select_step(ctx: WorkContext) -> WorkState:
         log_step_files(step_files)
 
     if ctx.last_test_error:
-        warn(
-            f"Fixing: {ctx.last_test_error[:70]}{'...' if len(ctx.last_test_error) > 70 else ''}"
-        )
+        warn(f"Fixing: {ctx.last_test_error[:70]}{'...' if len(ctx.last_test_error) > 70 else ''}")
     elif ctx.last_review_issues:
         warn(
             f"Fixing: {ctx.last_review_issues[:70]}{'...' if len(ctx.last_review_issues) > 70 else ''}"
@@ -176,9 +174,9 @@ def handle_execute_work(ctx: WorkContext) -> WorkState:
         subtask = fetch_subtask_details(ctx.commit_ticket)
         if subtask:
             subtask_context = f"""
-## Subtask: {subtask['id']} - {subtask['title']}
+## Subtask: {subtask["id"]} - {subtask["title"]}
 
-{subtask['description'] or '(no description)'}
+{subtask["description"] or "(no description)"}
 
 Focus on implementing THIS subtask's scope, not the entire ticket.
 """
@@ -381,7 +379,9 @@ def handle_check_completion(ctx: WorkContext) -> WorkState:
     else:
         # Step completed
         step_elapsed = ctx.iter_state.get("step_elapsed", "?")
-        success_with_conclusion(f"Step {ctx.current_step} done ({step_elapsed})", get_diff_summary())
+        success_with_conclusion(
+            f"Step {ctx.current_step} done ({step_elapsed})", get_diff_summary()
+        )
         ctx.step_done = True
         return WorkState.VERIFY_STEP
 
@@ -392,6 +392,7 @@ def handle_verify_step(ctx: WorkContext) -> WorkState:
         ctx.tests_passed = True
         ctx.last_test_error = None
         ctx.last_review_issues = None
+        ctx.verify_attempts = 0
         # Mark step complete
         for step in ctx.plan_steps:
             if step["id"] == ctx.current_step:
@@ -412,13 +413,38 @@ def handle_verify_step(ctx: WorkContext) -> WorkState:
     ctx.tests_passed = verify.passed
     ctx.iter_state["test_errors"] = verify.test_errors
     ctx.iter_state["review_issues"] = verify.review_issues
-    ctx.iter_state["fixes_applied"] = [f"fix attempt {i+1}" for i in range(verify.fix_attempts)]
+    ctx.iter_state["fixes_applied"] = [f"fix attempt {i + 1}" for i in range(verify.fix_attempts)]
 
     if verify.passed:
         ctx.review_status = "APPROVED"
         ctx.last_test_error = None
         ctx.last_review_issues = None
-    elif verify.test_errors:
+        ctx.verify_attempts = 0
+        # Mark step complete
+        for step in ctx.plan_steps:
+            if step["id"] == ctx.current_step:
+                step["done"] = True
+                break
+        return WorkState.COMMIT_CHANGES
+
+    # Verification failed - check retry budget
+    ctx.verify_attempts += 1
+    if ctx.verify_attempts < ctx.max_verify_attempts:
+        # Loop back to work with failure context
+        if verify.test_errors:
+            ctx.last_test_error = verify.test_errors[0]
+            ctx.last_review_issues = None
+            log(f"Verify retry {ctx.verify_attempts}/{ctx.max_verify_attempts} (test failure)")
+        else:
+            ctx.last_test_error = None
+            ctx.last_review_issues = (
+                "; ".join(verify.review_issues) if verify.review_issues else None
+            )
+            log(f"Verify retry {ctx.verify_attempts}/{ctx.max_verify_attempts} (review issues)")
+        return WorkState.EXECUTE_WORK  # Retry from work phase
+
+    # Exhausted retries - set error context and commit with [FAIL]
+    if verify.test_errors:
         ctx.review_status = "skipped (tests failed)"
         ctx.last_test_error = verify.test_errors[0]
         ctx.last_review_issues = None
@@ -426,13 +452,6 @@ def handle_verify_step(ctx: WorkContext) -> WorkState:
         ctx.review_status = f"NEEDS_FIXES ({verify.fix_attempts} attempts)"
         ctx.last_test_error = None
         ctx.last_review_issues = "; ".join(verify.review_issues) if verify.review_issues else None
-
-    # Mark step complete if tests passed
-    if ctx.tests_passed:
-        for step in ctx.plan_steps:
-            if step["id"] == ctx.current_step:
-                step["done"] = True
-                break
 
     return WorkState.COMMIT_CHANGES
 
@@ -474,6 +493,9 @@ def handle_commit_changes(ctx: WorkContext) -> WorkState:
     else:
         log("No new files changed in this step")
 
+    # Reset verify attempts after commit
+    ctx.verify_attempts = 0
+
     return WorkState.SAVE_STATE
 
 
@@ -506,9 +528,7 @@ def handle_save_state(ctx: WorkContext) -> WorkState:
             )
             if new_comment_id:
                 ctx.comment_id = new_comment_id
-                ctx.log_entries.insert(
-                    0, f"{time.strftime('%H:%M', time.localtime())} {log_entry}"
-                )
+                ctx.log_entries.insert(0, f"{time.strftime('%H:%M', time.localtime())} {log_entry}")
 
     return WorkState.SELECT_STEP  # Next iteration
 
@@ -705,7 +725,9 @@ def process_ticket_work(ctx: WorkContext) -> bool:
         iter_elapsed = fmt_duration(time.time() - ctx.iter_start)
         iter_tokens = fmt_tokens(token_tracker.iteration.total)
         iter_cost = fmt_cost(token_tracker.iteration.cost_usd)
-        log(f"Iteration {ctx.iteration} completed in {iter_elapsed} | {iter_tokens} tokens ({iter_cost})")
+        log(
+            f"Iteration {ctx.iteration} completed in {iter_elapsed} | {iter_tokens} tokens ({iter_cost})"
+        )
 
         time.sleep(1)
 
