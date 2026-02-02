@@ -1,13 +1,29 @@
 # Lisa - Looping Implementor Saving Assumptions
 
-> `lisa` loves Ralph 💗
+> Autonomous ticket implementation that never loses context.
 
-Autonomous Linear ticket implementation using Claude Code. Lisa advances the [Ralph loop](https://ghuntley.com/loop/) - reading your ticket, creating a plan, implementing step-by-step, testing, reviewing, and tracking every assumption in a Linear comment so you always know what decisions were made.
+What if your ticket backlog could implement itself?
+
+Lisa is a harness that lets Claude Code work autonomously on Linear tickets without losing context. Point it at a ticket, and Lisa reads the requirements, breaks them into executable steps, implements each one with Claude Code, runs tests, performs code review, and commits—all while tracking every decision in Linear so humans stay in the loop.
+
+No more context-switching between ticket, IDE, and terminal. No more "what was I doing?" after lunch. Lisa maintains state across sessions, resumes interrupted work, and produces a reviewer guide so your team can merge with confidence.
+
+Lisa advances the [Ralph loop](https://ghuntley.com/loop/)—read ticket, plan, implement, test, review, commit—but fully automated.
+
+## Prerequisites
+
+System dependencies (not installed by pip):
+- **Claude Code** - the `claude` CLI ([install from Anthropic](https://docs.anthropic.com/en/docs/claude-code))
+- **git** - for branch/commit operations
+- **Python 3.11+**
+
+Python dependencies (auto-installed):
+- `pyyaml>=6.0`
 
 ## Installation
 
 ```bash
-# Install as CLI tool (recommended)
+# Install as CLI tool
 uv tool install git+https://github.com/evenly-energy/lisa
 
 # Update to latest
@@ -19,41 +35,161 @@ cd lisa
 uv pip install -e ".[dev]"
 ```
 
-## Usage
-
+Set your Linear API key:
 ```bash
-# Basic usage
-lisa ENG-123
-
-# Build in temporary worktree (clean environment)
-lisa ENG-123 -w
-
-# Multiple tickets (processed serially)
-lisa ENG-123 ENG-456
-
-# Dry run - show plan without executing
-lisa ENG-123 --dry-run
-
-# Interactive mode - confirm assumptions
-lisa ENG-123 -i
-
-# Skip verification (faster, less safe)
-lisa ENG-123 --skip-verify
-
-# Review only - run final review on current changes
-lisa ENG-123 --review-only
-
-# Generate review guide for current branch
-lisa ENG-123 --conclusion
+export LINEAR_API_KEY="lin_api_..."
+# Get from: Linear Settings → Security & access → Personal API keys
 ```
 
-## Environment Variables
+Run on a ticket:
+```bash
+lisa ENG-123
 
-- `LINEAR_API_KEY` (required) - Linear API key for ticket access
+# Or in a clean worktree (recommended)
+lisa ENG-123 -w
+```
 
-## Configuration
+## How It Works
 
-Create `.lisa/prompts.yaml` in your project to override defaults:
+```
+PRE-WORK           WORK LOOP              POST-WORK
+─────────          ─────────              ─────────
+Fetch ticket       Select step            Conclusion
+Create branch  →   Execute work       →   Review guide
+Plan steps         Verify (test/review)   Comment update
+                   Commit progress
+                   Save state
+                   (repeat)
+```
+
+## PRE-WORK Phase
+
+### Ticket Fetch
+Pulls the Linear ticket with description, subtasks, and blocking relations.
+
+### Branch Management
+Creates or reuses a branch named `{ticket-id}-{slug}`. If you're already on a ticket branch, Lisa stays there. Otherwise creates a new incremental branch (e.g., `eng-123-foo-2`).
+
+### State Restoration
+Resumes from the Lisa comment on the ticket (`🤖 lisa · {branch}`). Tracks iteration count, completed steps, and assumptions.
+
+### Planning
+Claude explores the codebase and generates 5-20 granular steps with:
+- File operations (create/modify/delete) per step
+- Similar implementations to use as templates
+- Planning assumptions (P.1, P.2, ...)
+
+Subtasks are topologically sorted by blocking relations before planning.
+
+### Interactive Mode (`-i`)
+Review and edit assumptions before work begins. Curses UI with:
+- **Space** - Toggle assumption selected/deselected
+- **Ctrl+R** - Request replan with updated assumptions
+- **Enter** - Continue with current assumptions
+
+## WORK Loop
+
+State machine: `SELECT_STEP → EXECUTE_WORK → HANDLE_ASSUMPTIONS → CHECK_COMPLETION → VERIFY_STEP → COMMIT_CHANGES → SAVE_STATE`
+
+### Execute
+Claude Code implements the current step with context from:
+- Plan and exploration findings
+- Planning assumptions to follow
+- Prior iteration history
+- Any test/review failures to fix
+
+### Verify
+Test → test-fix → review → fix cycle (max 2 attempts each):
+1. **Test**: runs configured test commands directly
+2. **Test-fix**: if tests fail, Claude fixes and re-tests
+3. **Review**: Claude checks conventions, security, test quality
+4. **Fix**: Claude fixes review issues, re-tests after
+
+### Commit
+Structured message with git trailers:
+```
+feat(lisa): [ENG-123] step 3: add webhook handler
+
+Lisa-Iteration: 5
+Lisa-Step: 3
+Lisa-Assumptions: P.1, 5.1, 5.2
+```
+
+### Save State
+Updates the Linear comment with:
+- Plan checklist (done/pending steps)
+- Current step indicator
+- Iteration count and timestamps
+- Assumptions made
+- Recent log entries
+
+## POST-WORK Phase
+
+### Conclusion
+When all steps complete, Lisa generates a **reviewer guide**:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 Review Guide: ENG-123 - Add webhook notifications
+
+Purpose
+  Enables real-time notifications when devices change status
+  by sending HTTP webhooks to configured endpoints.
+
+Entry Point
+  POST /api/webhooks → WebhookController.register()
+
+Flow
+  1. Request validated in WebhookController.register()
+  2. WebhookService.create() persists to DB
+  3. DeviceService emits events → WebhookDispatcher listens
+  4. Dispatcher sends HTTP POST to registered URLs
+
+Error Handling
+  1. WebhookService.create(): duplicate URL → 409 Conflict
+  2. WebhookDispatcher.send(): connection timeout → queued for retry
+
+Key Review Points
+  1. ⚠ WebhookDispatcher.send()
+     Async HTTP call with 5s timeout
+     Risk: blocking if executor pool exhausted
+
+Test Coverage
+  ✓ Happy path: webhook creation and dispatch
+  ✗ Malformed JSON handling
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+The review guide is saved to the Linear comment and printed to terminal.
+
+## Structured Output & Schemas
+
+Lisa uses JSON schemas to get predictable Claude responses. Schemas are defined in `schemas/default.yaml`:
+
+- **planning**: steps, assumptions, exploration findings
+- **work**: step_done signal, blocked reason, work assumptions
+- **test_extraction**: failed test names, error summary
+- **review**: approved/rejected with findings
+- **conclusion_summary**: purpose, flow, error handling, review points
+
+Passed to Claude CLI via `--json-schema` for validated output.
+
+## Worktrees & Serial Ticket Work
+
+### Worktrees (`-w`)
+Creates an isolated worktree in `/tmp/lisa/{session}` for clean builds. Auto-cleaned on exit.
+
+### Multiple Tickets
+```bash
+lisa ENG-123 ENG-456 ENG-789
+```
+Processed serially. Each ticket gets its own branch and state.
+
+## Project Configuration
+
+> Note: Lisa was built for the evenly-platform stack (Kotlin/Gradle backend, TypeScript frontend) and defaults reflect that. Any stack works with config overrides.
+
+Override defaults with `.lisa/prompts.yaml` in your project:
 
 ```yaml
 config:
@@ -69,7 +205,6 @@ config:
   fallback_tools: >-
     Read Edit Write Grep Glob Skill
     Bash(git:*) Bash(./gradlew:*) Bash(pnpm:*)
-    Bash(cd:*) Bash(ls:*) Bash(mkdir:*) Bash(rm:*)
 
   # Test retry optimization
   test_filter_templates:
@@ -85,32 +220,38 @@ test:
     - name: "Frontend tests"
       run: "npm test"
       condition: "frontend"
+
+# Format commands (run before commit)
+format:
+  commands:
+    - name: "Kotlin format"
+      run: "./gradlew ktlintFormat"
+      condition: "backend"
 ```
 
-## How It Works
+## CLI Reference
 
-1. Fetches Linear ticket, subtasks, and blocking relations
-2. Creates/checks out branch (reuses slug from existing branches)
-3. Loads state from comment on ticket (🤖 lisa · {branch})
-4. **Planning Phase**: Claude analyzes ticket and creates granular step checklist
-5. Picks first incomplete step from plan
-6. Runs Claude Code to work on that step
-7. When step done: runs tests, code review, fix loop
-8. Commits with: `feat(lisa): [ENG-456] step N - description`
-9. Updates state comment on ticket
-10. Repeats until max iterations reached
+```
+lisa TICKET_ID [TICKET_ID ...] [options]
 
-## Phases
-
-1. **Planning** - Claude reads codebase, creates 3-8 granular steps
-2. **Interactive** (optional, `-i`/`-I`) - Review/edit assumptions before proceeding
-3. **Work** - Implement current step with Claude Code
-4. **Test** - Run tests directly (no Claude, fast)
-5. **Test-fix** - If tests fail, Claude fixes (max 3 attempts)
-6. **Review** - Claude checks conventions, security, test quality
-7. **Fix** - Claude fixes review issues, re-test after (max 3 attempts)
-8. **Commit** - Save progress with structured commit message
-9. **Final review** - When all steps done, comprehensive quality check
+Options:
+  -n, --max-iterations N    Max iterations (default: 30)
+  --max-turns N             Max turns per Claude session (default: 100)
+  -m, --model MODEL         Claude model (default: opus)
+  -p, --push                Push after each commit
+  --dry-run                 Show plan without executing
+  --skip-verify             Skip test and review phases
+  --skip-plan               Use subtasks directly as steps
+  -i, --interactive         Confirm assumptions after planning
+  -I, --always-interactive  Confirm assumptions in all phases
+  --debug                   Log all JSON outputs to .lisa/debug.log
+  --review-only             Run final review on current changes
+  --conclusion              Generate review guide and exit
+  -w, --worktree            Use temporary worktree
+  --yolo                    Skip all permission checks (unsafe)
+  --fallback-tools          Use explicit tool allowlist
+  -v, --version             Show version
+```
 
 ## Assumptions System
 
@@ -124,13 +265,6 @@ Assumptions are:
 - Included in commit trailers (`Lisa-Assumptions:`)
 - Editable via interactive mode (`-i` or `-I`)
 
-### Interactive Mode
-
-With `-i` or `-I`, a curses UI lets you review assumptions:
-- **Space** - Toggle assumption selected/deselected
-- **Ctrl+R** - Request replan with updated assumptions
-- **Enter** - Continue with current assumptions
-
 ## State Tracking
 
 Each branch has its own comment on the Linear ticket showing:
@@ -140,34 +274,20 @@ Each branch has its own comment on the Linear ticket showing:
 - Assumptions made
 - Recent log entries
 
-State is resumable - re-running continues from where it left off.
+State is resumable—re-running continues from where it left off.
 
-## Backwards Compatibility
+## Development
 
-Lisa maintains backwards compatibility with tralph:
-- Reads both `Lisa-*` and `Tralph-*` git trailers
-- Reads both `🤖 **lisa**` and `🤖 **tralph**` comment headers
-- Writes `Lisa-*` trailers and `lisa` headers for new state
+```bash
+# Dev install
+uv pip install -e ".[dev]"
 
-## Options
-
+# Lint
+ruff check src/
+ruff format src/
 ```
--n, --max-iterations N    Max iterations (default: 30)
---max-turns N             Max turns per Claude session (default: 100)
--m, --model MODEL         Claude model (default: opus)
--p, --push                Push after each commit
---dry-run                 Show plan without executing
---skip-verify             Skip test and review phases
---skip-plan               Use subtasks directly
--i, --interactive         Confirm assumptions after planning
--I, --always-interactive  Confirm assumptions in all phases
---debug                   Log all JSON outputs
---review-only             Run final review and exit
---conclusion              Generate review guide and exit
--w, --worktree           Use temporary worktree
---yolo                   Skip all permission checks (unsafe)
---fallback-tools         Use explicit tool allowlist
-```
+
+See `CLAUDE.md` for architecture patterns and implementation details.
 
 ## License
 

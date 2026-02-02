@@ -42,6 +42,24 @@ States: SELECT_STEP → EXECUTE_WORK → HANDLE_ASSUMPTIONS → CHECK_COMPLETION
 ### Config Override
 Project can override defaults with `.lisa/prompts.yaml`. Loaded in `config/prompts.py`.
 
+### Structured Output & Schemas
+Lisa uses JSON schemas to get predictable Claude responses. Defined in `schemas/default.yaml`:
+
+- **planning**: steps array, assumptions array, exploration findings (patterns, modules, similar implementations)
+- **work**: step_done (int|null), blocked (string|null), assumptions array
+- **test_extraction**: passed_count, failed_count, failed_tests array, extracted_output, summary
+- **review**: approved bool, findings array [{category, status, detail}], summary
+- **review_light**: approved bool, issue (string|null) - fast haiku review
+- **conclusion_summary**: purpose, entry_point, flow, error_handling array, key_review_points array
+
+Usage in `clients/claude.py`:
+```python
+output = work_claude(prompt, model, yolo, fallback_tools, max_turns, json_schema=schemas["work"])
+result = json.loads(output)  # Guaranteed to match schema
+```
+
+Passed to Claude CLI via `--json-schema` flag.
+
 ## Commands
 
 ```bash
