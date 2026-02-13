@@ -746,7 +746,7 @@ def process_ticket_work(ctx: WorkContext) -> bool:
         token_tracker.reset_iteration()
 
         print(f"\n{BLUE}{'━' * 50}{NC}")
-        ticket_link = hyperlink(ctx.issue_url, ctx.ticket_id)
+        ticket_link = hyperlink(ctx.comment_url, ctx.ticket_id)
         title = ctx.title[:30] + "…" if len(ctx.title) > 30 else ctx.title
         log(f"Iteration {ctx.iteration}/{ctx.config.max_iterations} · {ticket_link}: {title}")
         print(f"{BLUE}{'━' * 50}{NC}")
