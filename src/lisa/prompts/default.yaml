@@ -1,33 +1,7 @@
-# Lisa prompts and configuration
+# Lisa prompts
 # Override per-project: .lisa/prompts.yaml | globally: ~/.config/lisa/prompts.yaml
 # Only specify keys you want to change — deep merge keeps the rest
-
-# Project configuration
-config:
-  # Path patterns for detecting file categories
-  # Used by test commands with conditions like "backend" or "frontend"
-  path_patterns:
-    frontend: "frontend/**"
-    backend: "**"  # Everything else (checked after frontend)
-
-  # File extensions for frontend detection (beyond path pattern)
-  frontend_extensions: [".ts", ".tsx", ".js", ".jsx"]
-
-  # Fallback tools when project settings not available
-  # Used with --fallback-tools flag
-  fallback_tools: >-
-    Read Edit Write Grep Glob Skill
-    Bash(git:*) Bash(./gradlew:*) Bash(pnpm:*) Bash(npm:*)
-    Bash(cd:*) Bash(ls:*) Bash(mkdir:*) Bash(rm:*)
-
-  # Test filter command template (for retrying specific tests)
-  # Use {test_filters} placeholder for the generated filter args
-  test_filter_templates:
-    "./gradlew test": "./gradlew test {test_filters}"
-
-  # How to generate filter args for each test runner
-  # Use {test_name} placeholder
-  test_filter_format: '--tests "*{test_name}"'
+# Stack config (tests, format, coverage) lives in config.yaml, not here.
 
 conclusion:
   description: Generate a short conclusion for success/warning messages
@@ -304,18 +278,7 @@ work:
     - Cover happy path + error paths
     - Target 80%+ coverage on new code (will be enforced at end)
 
-format:
-  description: Format commands run before commit to avoid pre-commit hook failures
-  commands:
-    - name: "Backend format"
-      run: "./gradlew ktlintFormat"
-      condition: "backend"
-    - name: "Frontend format"
-      run: "cd frontend && pnpm lint --fix"
-      condition: "frontend"
-
 test:
-  description: Test commands run directly by tralph (not Claude)
   extract_prompt: |
     Extract failure info from this test/lint output.
 
@@ -327,22 +290,6 @@ test:
     - summary: short summary like "3 failed, 47 passed: UserServiceTest" or "ktlint: 5 formatting errors"
 
     {output}
-  commands:
-    - name: "Backend tests"
-      run: "./gradlew test"
-      condition: "backend"
-    - name: "Backend lint"
-      run: "./gradlew ktlintFormat && ./gradlew ktlintCheck"
-      condition: "backend"
-    - name: "Backend static analysis"
-      run: "./gradlew detekt"
-      condition: "backend"
-    - name: "Frontend tests"
-      run: ".claude/scripts/run-frontend-tests.sh"
-      condition: "frontend"
-    - name: "Frontend lint"
-      run: "cd frontend && pnpm lint:check"
-      condition: "frontend"
   fix_prompt: |
     Fix this {command_name} failure.
 
@@ -480,8 +427,6 @@ completion_check:
     - If incomplete: {{"complete": false, "missing": "brief description of what's missing"}}
 
 coverage_fix:
-  description: Add tests to reach 80% coverage
-  run: "./gradlew koverVerify"
   template: |
     Coverage verification failed (below 80%).
 

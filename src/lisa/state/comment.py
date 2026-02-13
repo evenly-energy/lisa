@@ -288,7 +288,7 @@ def build_state_comment(
     body += f"""| Field | Value |
 |-------|-------|
 | Iterations | {iteration} |
-| Current step | {current_step or '-'} |
+| Current step | {current_step or "-"} |
 | Last run | {timestamp} |
 
 **Log:**

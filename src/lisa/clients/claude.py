@@ -17,10 +17,9 @@ DEFAULT_FALLBACK_TOOLS = (
 def get_fallback_tools() -> str:
     """Get fallback tools from config or use default."""
     try:
-        from lisa.config.prompts import get_prompts
+        from lisa.config.settings import get_config
 
-        prompts = get_prompts()
-        config = prompts.get("config", {})
+        config = get_config()
         return config.get("fallback_tools", DEFAULT_FALLBACK_TOOLS).strip()
     except Exception:
         return DEFAULT_FALLBACK_TOOLS

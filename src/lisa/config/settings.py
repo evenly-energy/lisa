@@ -1,6 +1,6 @@
-"""Prompt loading and management with layered config overrides.
+"""Stack config loading with layered overrides.
 
-Priority chain: bundled defaults < ~/.config/lisa/prompts.yaml < .lisa/prompts.yaml
+Priority chain: bundled defaults < ~/.config/lisa/config.yaml < .lisa/config.yaml
 Deep merge: dicts merge recursively, lists/scalars replace.
 """
 
@@ -12,30 +12,30 @@ import yaml
 
 from lisa.config.utils import deep_merge, load_yaml
 
-_prompts: Optional[dict] = None
+_config: Optional[dict] = None
 _loaded_sources: list[str] = []
 
-GLOBAL_CONFIG = Path.home() / ".config" / "lisa" / "prompts.yaml"
-PROJECT_CONFIG = Path(".lisa") / "prompts.yaml"
+GLOBAL_CONFIG = Path.home() / ".config" / "lisa" / "config.yaml"
+PROJECT_CONFIG = Path(".lisa") / "config.yaml"
 
 
 def _load_defaults() -> dict:
-    """Load bundled default prompts."""
+    """Load bundled default config."""
     try:
         files = importlib.resources.files("lisa")
-        prompts_path = files / "prompts" / "default.yaml"
-        content = prompts_path.read_text()
+        config_path = files / "defaults" / "config.yaml"
+        content = config_path.read_text()
         return yaml.safe_load(content)
     except (FileNotFoundError, TypeError):
-        dev_path = Path(__file__).parent.parent.parent.parent / "prompts" / "default.yaml"
+        dev_path = Path(__file__).parent.parent / "defaults" / "config.yaml"
         if dev_path.exists():
             with open(dev_path) as f:
                 return yaml.safe_load(f)
-        raise FileNotFoundError("Could not find prompts file")
+        raise FileNotFoundError("Could not find defaults/config.yaml")
 
 
-def load_prompts() -> dict:
-    """Load prompts with layered overrides: defaults < global < project."""
+def load_config() -> dict:
+    """Load config with layered overrides: defaults < global < project."""
     global _loaded_sources
     _loaded_sources = []
 
@@ -55,21 +55,21 @@ def load_prompts() -> dict:
     return result
 
 
-def get_prompts() -> dict:
-    """Get cached prompts (loads on first access)."""
-    global _prompts
-    if _prompts is None:
-        _prompts = load_prompts()
-    return _prompts
+def get_config() -> dict:
+    """Get cached config (loads on first access)."""
+    global _config
+    if _config is None:
+        _config = load_config()
+    return _config
 
 
-def reload_prompts() -> dict:
-    """Force reload prompts."""
-    global _prompts
-    _prompts = load_prompts()
-    return _prompts
+def reload_config() -> dict:
+    """Force reload config."""
+    global _config
+    _config = load_config()
+    return _config
 
 
-def get_loaded_sources() -> list[str]:
+def get_config_loaded_sources() -> list[str]:
     """Return list of config sources that were loaded (for logging)."""
     return _loaded_sources

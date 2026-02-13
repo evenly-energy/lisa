@@ -19,9 +19,9 @@ def debug_log(config_or_debug: RunConfig | bool, label: str, data) -> None:
     DEBUG_LOG.parent.mkdir(exist_ok=True)
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     with open(DEBUG_LOG, "a") as f:
-        f.write(f"\n{'='*60}\n")
+        f.write(f"\n{'=' * 60}\n")
         f.write(f"[{timestamp}] {label}\n")
-        f.write(f"{'='*60}\n")
+        f.write(f"{'=' * 60}\n")
         if isinstance(data, str):
             try:
                 parsed = json.loads(data)

@@ -2,6 +2,7 @@
 
 import fnmatch
 import json
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Optional
 from lisa.clients.claude import claude, work_claude
 from lisa.config.prompts import get_prompts
 from lisa.config.schemas import get_schemas
+from lisa.config.settings import get_config
 from lisa.git.commit import get_changed_files
 from lisa.models.core import Assumption
 from lisa.models.results import TestFailure, VerifyResult
@@ -27,12 +29,32 @@ from lisa.ui.timer import LiveTimer
 from lisa.utils.debug import debug_log
 
 
+def _expand_braces(pattern: str) -> list[str]:
+    m = re.search(r"\{([^}]+)\}", pattern)
+    if not m:
+        return [pattern]
+    prefix, suffix = pattern[: m.start()], pattern[m.end() :]
+    return [prefix + alt + suffix for alt in m.group(1).split(",")]
+
+
+def should_run_command(cmd: dict, changed_files: list[str]) -> bool:
+    """Check if command should run based on its paths globs vs changed files.
+
+    No paths = always run. Otherwise, run if any changed file matches any glob.
+    """
+    paths = cmd.get("paths", [])
+    if not paths:
+        return True
+    expanded = [p for pattern in paths for p in _expand_braces(pattern)]
+    return any(fnmatch.fnmatch(f, p) for f in changed_files for p in expanded)
+
+
 def run_preflight() -> bool:
     """Run all test and format commands unconditionally. Returns True if all pass."""
-    prompts = get_prompts()
+    config = get_config()
 
-    test_commands = prompts.get("test", {}).get("commands", [])
-    format_commands = prompts.get("format", {}).get("commands", [])
+    test_commands = config.get("tests", [])
+    format_commands = config.get("format", [])
     all_commands = [(c, DEFAULT_TEST_TIMEOUT) for c in test_commands] + [
         (c, 120) for c in format_commands
     ]
@@ -71,56 +93,21 @@ def run_preflight() -> bool:
     return True
 
 
-def matches_pattern(filepath: str, pattern: str) -> bool:
-    """Check if filepath matches a glob pattern."""
-    return fnmatch.fnmatch(filepath, pattern)
-
-
-def detect_file_categories(changed: list[str], prompts: dict) -> dict[str, bool]:
-    """Detect which file categories are present in changed files.
-
-    Returns dict like {"backend": True, "frontend": False}
-    """
-    config = prompts.get("config", {})
-    path_patterns = config.get("path_patterns", {"frontend": "frontend/**", "backend": "**"})
-    frontend_extensions = config.get("frontend_extensions", [".ts", ".tsx", ".js", ".jsx"])
-
-    categories = {}
-
-    # Check frontend first (more specific)
-    frontend_pattern = path_patterns.get("frontend", "frontend/**")
-    categories["frontend"] = any(
-        matches_pattern(f, frontend_pattern) and any(f.endswith(ext) for ext in frontend_extensions)
-        for f in changed
-    )
-
-    # Backend is anything not matching frontend pattern
-    categories["backend"] = any(not matches_pattern(f, frontend_pattern) for f in changed)
-
-    return categories
-
-
 def run_format_phase(debug: bool = False) -> bool:
     """Run format commands before commit. Returns True on success."""
-    prompts = get_prompts()
+    config = get_config()
 
-    # Get format config
-    format_config = prompts.get("format", {})
-    commands = format_config.get("commands", [])
+    commands = config.get("format", [])
     if not commands:
         return True
 
-    # Detect file categories
     changed = get_changed_files()
     if not changed:
         return True
 
-    categories = detect_file_categories(changed, prompts)
-
     ran_any = False
     for cmd in commands:
-        condition = cmd.get("condition", "always")
-        if condition != "always" and not categories.get(condition, False):
+        if not should_run_command(cmd, changed):
             continue
 
         cmd_name = cmd["name"]
@@ -167,27 +154,24 @@ def run_test_phase(
     """
     prompts = get_prompts()
     schemas = get_schemas()
-    config = prompts.get("config", {})
+    cfg = get_config()
 
     timer = LiveTimer("Testing...", total_start)
     timer.start()
 
-    # Determine what changed using configurable patterns
     changed = get_changed_files()
-    categories = detect_file_categories(changed, prompts)
 
-    # Run configured test commands
-    commands = prompts["test"].get("commands", [])
+    commands = cfg.get("tests", [])
     failure: Optional[TestFailure] = None
     ran_commands = []
 
     # Get test filter config
-    filter_templates = config.get("test_filter_templates", {})
-    filter_format = config.get("test_filter_format", '--tests "*{test_name}"')
+    test_retry = cfg.get("test_retry", {})
+    filter_templates = test_retry.get("templates", {})
+    filter_format = test_retry.get("filter_format", '--tests "*{test_name}"')
 
     for cmd in commands:
-        condition = cmd.get("condition", "always")
-        if condition != "always" and not categories.get(condition, False):
+        if not should_run_command(cmd, changed):
             continue
 
         cmd_name = cmd["name"]
@@ -654,13 +638,16 @@ def verify_step(
 
 
 def run_coverage_gate(total_start: float, debug: bool = False) -> tuple[bool, str]:
-    """Run Kover coverage verification. Returns (passed, error_output)."""
-    prompts = get_prompts()
+    """Run coverage verification. Returns (passed, error_output)."""
+    cfg = get_config()
+    coverage_cmd = cfg.get("coverage", {}).get("run", "")
+    if not coverage_cmd:
+        return True, ""
 
     timer = LiveTimer("Coverage check...", total_start)
     timer.start()
 
-    cmd = prompts["coverage_fix"]["run"]
+    cmd = coverage_cmd
     try:
         result = subprocess.run(
             shlex.split(cmd),

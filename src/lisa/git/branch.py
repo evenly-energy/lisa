@@ -140,9 +140,7 @@ def create_or_get_branch(ticket_id: str, title: str, description: str) -> Option
         log(f"Found {len(existing)} existing branches, creating {branch_name}")
 
     # Create the branch
-    result = subprocess.run(
-        ["git", "checkout", "-b", branch_name], capture_output=True, text=True
-    )
+    result = subprocess.run(["git", "checkout", "-b", branch_name], capture_output=True, text=True)
     if result.returncode != 0:
         error(f"git checkout -b failed: {result.stderr}")
         return None

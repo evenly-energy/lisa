@@ -189,72 +189,83 @@ Processed serially. Each ticket gets its own branch and state.
 
 > Note: Lisa was built for the evenly-platform stack (Kotlin/Gradle backend, TypeScript frontend) and defaults reflect that. Any stack works with config overrides.
 
-Config files are deep-merged in order (later wins):
+Lisa uses two config files, each with three layers deep-merged (later wins):
 
-| Layer | Path | Scope |
+| Layer | Config (stack) | Prompts (AI) |
 |-------|------|-------|
-| Defaults | bundled `prompts/default.yaml` | Ships with Lisa |
-| Global | `~/.config/lisa/prompts.yaml` | All projects |
-| Project | `.lisa/prompts.yaml` | Current repo |
+| Defaults | bundled `defaults/config.yaml` | bundled `prompts/default.yaml` |
+| Global | `~/.config/lisa/config.yaml` | `~/.config/lisa/prompts.yaml` |
+| Project | `.lisa/config.yaml` | `.lisa/prompts.yaml` |
 
 Deep merge means you only need to specify the keys you want to change — everything else keeps its default value. Dicts merge recursively, lists and scalars replace.
 
-```yaml
-# ~/.config/lisa/prompts.yaml — personal defaults across all projects
-config:
-  fallback_tools: >-
-    Read Edit Write Grep Glob Bash(git:*) Bash(npm:*)
-```
+### Stack config (`config.yaml`)
+
+The stack config controls which commands Lisa runs for testing, formatting, and coverage. Each command can have `paths` globs — the command only runs if a changed file matches. Omit `paths` to always run.
 
 ```yaml
-# .lisa/prompts.yaml — project-specific overrides
-config:
-  test_filter_format: '--tests "*{test_name}"'
+# .lisa/config.yaml — only specify what you want to override
+
+tests:
+  - name: Backend tests
+    run: ./gradlew test
+    paths: ["**/*.kt", "**/*.java"]
+  - name: Frontend tests
+    run: npm test
+    paths: ["frontend/**"]
+
+format:
+  - name: Kotlin format
+    run: ./gradlew ktlintFormat
+    paths: ["**/*.kt"]
+
+coverage:
+  run: ./gradlew koverVerify
+  paths: ["**/*.kt"]
+
+test_retry:
+  templates:
+    "./gradlew test": "./gradlew test {test_filters}"
+  filter_format: '--tests "*{test_name}"'
+
+fallback_tools: >-
+  Read Edit Write Grep Glob Skill
+  Bash(git:*) Bash(npm:*)
+```
+
+#### Examples
+
+**Python project:**
+```yaml
+tests:
+  - name: pytest
+    run: pytest
+    paths: ["**/*.py"]
+
+format:
+  - name: ruff
+    run: ruff format .
+    paths: ["**/*.py"]
+
+coverage:
+  run: pytest --cov --cov-fail-under=80
+  paths: ["**/*.py"]
+```
+
+**Node.js project:**
+```yaml
+tests:
+  - name: vitest
+    run: npm test
+
+format:
+  - name: prettier
+    run: npx prettier --write .
+
+coverage: {}
 ```
 
 Active overrides are logged at startup.
-
-### Overridable sections
-
-Override defaults in `.lisa/prompts.yaml` (or `~/.config/lisa/prompts.yaml`):
-
-```yaml
-config:
-  # Path patterns for file category detection
-  path_patterns:
-    frontend: "frontend/**"
-    backend: "**"
-
-  # Extensions that identify frontend files
-  frontend_extensions: [".ts", ".tsx", ".js", ".jsx"]
-
-  # Tools allowed with --fallback-tools flag
-  fallback_tools: >-
-    Read Edit Write Grep Glob Skill
-    Bash(git:*) Bash(./gradlew:*) Bash(pnpm:*)
-
-  # Test retry optimization
-  test_filter_templates:
-    "./gradlew test": "./gradlew test {test_filters}"
-  test_filter_format: '--tests "*{test_name}"'
-
-# Test commands
-test:
-  commands:
-    - name: "Backend tests"
-      run: "./gradlew test"
-      condition: "backend"
-    - name: "Frontend tests"
-      run: "npm test"
-      condition: "frontend"
-
-# Format commands (run before commit)
-format:
-  commands:
-    - name: "Kotlin format"
-      run: "./gradlew ktlintFormat"
-      condition: "backend"
-```
 
 ## CLI Reference
 

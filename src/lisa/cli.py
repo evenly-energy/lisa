@@ -305,7 +305,7 @@ def validate_env() -> None:
 
 def log_config(config: RunConfig) -> None:
     """Log configuration status."""
-    from lisa.config import get_loaded_sources
+    from lisa.config import get_config, get_config_loaded_sources, get_loaded_sources, get_prompts
 
     if len(config.ticket_ids) > 1:
         ticket_chain = " → ".join(config.ticket_ids)
@@ -314,14 +314,14 @@ def log_config(config: RunConfig) -> None:
         log(f"Starting Lisa for {YELLOW}{config.ticket_ids[0]}{NC}")
     log(f"Max iterations: {config.max_iterations}, effort: {config.effort}, model: {config.model}")
 
-    # Trigger prompt loading so sources are populated
-    from lisa.config import get_prompts
-
+    # Trigger loading so sources are populated
     get_prompts()
-    sources = get_loaded_sources()
-    overrides = [s for s in sources if s != "defaults"]
-    if overrides:
-        log(f"Config overrides: {', '.join(overrides)}")
+    get_config()
+    prompt_overrides = [s for s in get_loaded_sources() if s != "defaults"]
+    config_overrides = [s for s in get_config_loaded_sources() if s != "defaults"]
+    all_overrides = list(dict.fromkeys(prompt_overrides + config_overrides))  # dedupe, keep order
+    if all_overrides:
+        log(f"Config overrides: {', '.join(all_overrides)}")
 
     if config.yolo:
         warn("YOLO MODE - all permission checks disabled")

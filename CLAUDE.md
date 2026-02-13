@@ -13,7 +13,8 @@ src/lisa/
 ├── models/          # PlanStep, Assumption, WorkState (FSM), WorkContext
 ├── state/           # Linear comment persistence
 ├── git/             # Branch/commit/worktree operations
-├── config/          # Load prompts.yaml and schemas.yaml
+├── config/          # prompts.py, settings.py, schemas.py, utils.py
+├── defaults/        # Bundled config.yaml (stack defaults)
 ├── ui/              # Colored output, curses assumption editor
 ├── prompts/         # Default prompt templates (YAML)
 └── schemas/         # JSON schemas for structured Claude output
@@ -27,6 +28,8 @@ src/lisa/
 - `phases/planning.py` - Claude analyzes ticket → plan steps
 - `clients/claude.py` - All Claude CLI interactions, token tracking
 - `prompts/default.yaml` - Default prompts (override with .lisa/prompts.yaml)
+- `defaults/config.yaml` - Default stack config (tests, format, coverage)
+- `config/settings.py` - Stack config loading with layered overrides
 
 ## Patterns
 
@@ -40,7 +43,9 @@ States: SELECT_STEP → EXECUTE_WORK → HANDLE_ASSUMPTIONS → CHECK_COMPLETION
 - Stored in Linear comment + git trailers
 
 ### Config Override
-Project can override defaults with `.lisa/prompts.yaml`. Loaded in `config/prompts.py`.
+Two config files with same layered override chain (defaults < `~/.config/lisa/` < `.lisa/`):
+- **prompts.yaml** — AI prompt templates (internal)
+- **config.yaml** — Stack config: test/format/coverage commands, fallback tools (user-facing)
 
 ### Structured Output & Schemas
 Lisa uses JSON schemas to get predictable Claude responses. Defined in `schemas/default.yaml`:
@@ -79,7 +84,7 @@ ruff format src/
 - Python 3.11+
 
 ## Testing Note
-Lisa runs tests for *target projects* (via `verify.py`), not itself. Test commands come from `prompts/default.yaml` or project's `.lisa/prompts.yaml`.
+Lisa runs tests for *target projects* (via `verify.py`), not itself. Test commands come from `defaults/config.yaml` or project's `.lisa/config.yaml`.
 
 ## Adding New Phases
 1. Create `phases/newphase.py` with `run_newphase()`

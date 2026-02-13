@@ -10,6 +10,7 @@ from lisa.clients.claude import token_tracker, work_claude
 from lisa.clients.linear import fetch_subtask_details
 from lisa.config.prompts import get_prompts
 from lisa.config.schemas import get_schemas
+from lisa.config.settings import get_config
 from lisa.git.commit import get_changed_files, get_diff_summary, git_commit, summarize_for_commit
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import WorkContext, WorkState
@@ -21,12 +22,12 @@ from lisa.phases.conclusion import (
 )
 from lisa.phases.constants import EFFORT_QUICK, EFFORT_WORK, MAX_FIX_ATTEMPTS, resolve_effort
 from lisa.phases.verify import (
-    detect_file_categories,
     run_coverage_fix_phase,
     run_coverage_gate,
     run_format_phase,
     run_review_phase,
     run_test_phase,
+    should_run_command,
     verify_step,
 )
 from lisa.state.comment import save_state
@@ -618,10 +619,14 @@ def handle_all_done(ctx: WorkContext) -> None:
         ):
             warn("Final commit failed - changes not committed")
 
-    # Run coverage gate before conclusion (backend only)
+    # Run coverage gate if changed files match coverage paths
     all_changed = get_changed_files()
-    categories = detect_file_categories(all_changed, get_prompts())
-    if not ctx.config.skip_verify and categories.get("backend", False):
+    coverage_cfg = get_config().get("coverage", {})
+    if (
+        not ctx.config.skip_verify
+        and coverage_cfg.get("run")
+        and should_run_command(coverage_cfg, all_changed)
+    ):
         coverage_passed, coverage_error = run_coverage_gate(ctx.total_start, ctx.config.debug)
         for attempt in range(MAX_FIX_ATTEMPTS):
             if coverage_passed:

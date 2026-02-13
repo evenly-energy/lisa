@@ -1,0 +1,42 @@
+# Lisa stack configuration
+# Override per-project: .lisa/config.yaml | globally: ~/.config/lisa/config.yaml
+# Only specify keys you want to change — deep merge keeps the rest
+
+tests:
+  - name: "Backend tests"
+    run: "./gradlew test"
+    paths: ["**/*.kt", "**/*.java"]
+  - name: "Backend lint"
+    run: "./gradlew ktlintFormat && ./gradlew ktlintCheck"
+    paths: ["**/*.kt"]
+  - name: "Backend static analysis"
+    run: "./gradlew detekt"
+    paths: ["**/*.kt"]
+  - name: "Frontend tests"
+    run: ".claude/scripts/run-frontend-tests.sh"
+    paths: ["frontend/**/*.{ts,tsx,js,jsx}"]
+  - name: "Frontend lint"
+    run: "cd frontend && pnpm lint:check"
+    paths: ["frontend/**/*.{ts,tsx,js,jsx}"]
+
+format:
+  - name: "Backend format"
+    run: "./gradlew ktlintFormat"
+    paths: ["**/*.kt"]
+  - name: "Frontend format"
+    run: "cd frontend && pnpm lint --fix"
+    paths: ["frontend/**/*.{ts,tsx,js,jsx}"]
+
+coverage:
+  run: "./gradlew koverVerify"
+  paths: ["**/*.kt", "**/*.java"]
+
+test_retry:
+  templates:
+    "./gradlew test": "./gradlew test {test_filters}"
+  filter_format: '--tests "*{test_name}"'
+
+fallback_tools: >-
+  Read Edit Write Grep Glob Skill
+  Bash(git:*) Bash(./gradlew:*) Bash(pnpm:*) Bash(npm:*)
+  Bash(cd:*) Bash(ls:*) Bash(mkdir:*) Bash(rm:*)

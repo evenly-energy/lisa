@@ -7,7 +7,9 @@ from typing import Optional
 from lisa.models.core import Assumption, EditResult
 
 
-def edit_assumptions_curses(assumptions: list[Assumption], context: str = "") -> Optional[EditResult]:
+def edit_assumptions_curses(
+    assumptions: list[Assumption], context: str = ""
+) -> Optional[EditResult]:
     """Interactive curses UI for editing assumption selections.
 
     Returns EditResult with assumptions and action ("continue" or "replan"), or None if user quits.
@@ -104,16 +106,16 @@ def edit_assumptions_curses(assumptions: list[Assumption], context: str = "") ->
                         if row >= height - 4:
                             break
                         prefix = "-> " if line_idx == 0 else "   "
-                        stdscr.addstr(row, 8, f"{prefix}{line}", curses.color_pair(5) | curses.A_DIM)
+                        stdscr.addstr(
+                            row, 8, f"{prefix}{line}", curses.color_pair(5) | curses.A_DIM
+                        )
                         row += 1
 
                 row += 1  # Extra spacing between items
 
             # Footer (avoid last row - curses errors on last char)
             footer_row = height - 3
-            stdscr.addstr(
-                footer_row, 0, "+" + "-" * (width - 2) + "+", curses.color_pair(1)
-            )
+            stdscr.addstr(footer_row, 0, "+" + "-" * (width - 2) + "+", curses.color_pair(1))
             controls = "  j/k nav  SPACE toggle  e edit  ^R replan  ENTER confirm  q quit  "
             stdscr.addstr(
                 footer_row + 1, 2, controls[: width - 4], curses.color_pair(5) | curses.A_DIM
