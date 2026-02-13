@@ -220,6 +220,20 @@ review_light:
       description: Brief issue description if not approved, null if approved
   required: [approved, issue]
 
+completion_check:
+  type: object
+  additionalProperties: false
+  properties:
+    complete:
+      type: boolean
+      description: Whether the step's described goal appears fully implemented
+    missing:
+      type:
+        - string
+        - "null"
+      description: What specific work is missing or incomplete. Null if complete.
+  required: [complete, missing]
+
 slug:
   type: object
   additionalProperties: false

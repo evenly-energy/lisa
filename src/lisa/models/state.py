@@ -88,6 +88,7 @@ class WorkContext:
     # Error context for retry
     last_test_error: Optional[str]
     last_review_issues: Optional[str]
+    last_completion_issues: Optional[str]
 
     # Iteration state for commit
     iter_state: dict

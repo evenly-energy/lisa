@@ -61,4 +61,5 @@ class VerifyResult:
     passed: bool
     test_errors: list[str] = field(default_factory=list)
     review_issues: list[str] = field(default_factory=list)
+    completion_issues: list[str] = field(default_factory=list)
     fix_attempts: int = 0

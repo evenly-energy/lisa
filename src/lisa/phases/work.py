@@ -154,6 +154,10 @@ def handle_select_step(ctx: WorkContext) -> WorkState:
 
     if ctx.last_test_error:
         warn(f"Fixing: {ctx.last_test_error[:70]}{'...' if len(ctx.last_test_error) > 70 else ''}")
+    elif ctx.last_completion_issues:
+        warn(
+            f"Incomplete: {ctx.last_completion_issues[:70]}{'...' if len(ctx.last_completion_issues) > 70 else ''}"
+        )
     elif ctx.last_review_issues:
         warn(
             f"Fixing: {ctx.last_review_issues[:70]}{'...' if len(ctx.last_review_issues) > 70 else ''}"
@@ -195,6 +199,19 @@ The previous iteration completed the code but **tests failed**:
 ```
 You MUST fix this test failure before marking the step as done.
 Do NOT just re-implement the same code. Investigate the error and fix it.
+
+"""
+
+    # Include completion check failure so Claude knows what's missing
+    if ctx.last_completion_issues:
+        prior_context += f"""
+## ⚠️ STEP INCOMPLETE - FINISH THIS WORK
+
+The completion check found the step's goal was NOT fully achieved:
+```
+{ctx.last_completion_issues}
+```
+Complete the missing work, then signal step_done.
 
 """
 
@@ -392,6 +409,7 @@ def handle_verify_step(ctx: WorkContext) -> WorkState:
         ctx.tests_passed = True
         ctx.last_test_error = None
         ctx.last_review_issues = None
+        ctx.last_completion_issues = None
         ctx.verify_attempts = 0
         # Mark step complete
         for step in ctx.plan_steps:
@@ -399,6 +417,10 @@ def handle_verify_step(ctx: WorkContext) -> WorkState:
                 step["done"] = True
                 break
         return WorkState.COMMIT_CHANGES
+
+    # Get files for current step
+    current_step_obj = next((s for s in ctx.plan_steps if s["id"] == ctx.current_step), None)
+    step_files = current_step_obj.get("files", []) if current_step_obj else []
 
     verify = verify_step(
         ctx.step_desc,
@@ -408,6 +430,8 @@ def handle_verify_step(ctx: WorkContext) -> WorkState:
         ctx.config.yolo,
         ctx.config.fallback_tools,
         ctx.config.max_turns,
+        step_id=ctx.current_step,
+        step_files=step_files,
         debug=ctx.config.debug,
     )
     ctx.tests_passed = verify.passed
@@ -419,6 +443,7 @@ def handle_verify_step(ctx: WorkContext) -> WorkState:
         ctx.review_status = "APPROVED"
         ctx.last_test_error = None
         ctx.last_review_issues = None
+        ctx.last_completion_issues = None
         ctx.verify_attempts = 0
         # Mark step complete
         for step in ctx.plan_steps:
@@ -431,27 +456,41 @@ def handle_verify_step(ctx: WorkContext) -> WorkState:
     ctx.verify_attempts += 1
     if ctx.verify_attempts < ctx.max_verify_attempts:
         # Loop back to work with failure context
-        if verify.test_errors:
+        if verify.completion_issues:
+            ctx.last_completion_issues = "; ".join(verify.completion_issues)
+            ctx.last_test_error = None
+            ctx.last_review_issues = None
+            log(f"Verify retry {ctx.verify_attempts}/{ctx.max_verify_attempts} (incomplete)")
+        elif verify.test_errors:
             ctx.last_test_error = verify.test_errors[0]
             ctx.last_review_issues = None
+            ctx.last_completion_issues = None
             log(f"Verify retry {ctx.verify_attempts}/{ctx.max_verify_attempts} (test failure)")
         else:
             ctx.last_test_error = None
             ctx.last_review_issues = (
                 "; ".join(verify.review_issues) if verify.review_issues else None
             )
+            ctx.last_completion_issues = None
             log(f"Verify retry {ctx.verify_attempts}/{ctx.max_verify_attempts} (review issues)")
         return WorkState.EXECUTE_WORK  # Retry from work phase
 
     # Exhausted retries - set error context and commit with [FAIL]
-    if verify.test_errors:
+    if verify.completion_issues:
+        ctx.review_status = "skipped (incomplete)"
+        ctx.last_completion_issues = "; ".join(verify.completion_issues)
+        ctx.last_test_error = None
+        ctx.last_review_issues = None
+    elif verify.test_errors:
         ctx.review_status = "skipped (tests failed)"
         ctx.last_test_error = verify.test_errors[0]
         ctx.last_review_issues = None
+        ctx.last_completion_issues = None
     else:
         ctx.review_status = f"NEEDS_FIXES ({verify.fix_attempts} attempts)"
         ctx.last_test_error = None
         ctx.last_review_issues = "; ".join(verify.review_issues) if verify.review_issues else None
+        ctx.last_completion_issues = None
 
     return WorkState.COMMIT_CHANGES
 

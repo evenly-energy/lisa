@@ -283,7 +283,9 @@ def log_config(config: RunConfig) -> None:
     else:
         log(f"Starting Lisa for {YELLOW}{config.ticket_ids[0]}{NC}")
     turns_display = "unlimited" if config.max_turns == -1 else str(config.max_turns)
-    log(f"Max iterations: {config.max_iterations}, max turns: {turns_display}, model: {config.model}")
+    log(
+        f"Max iterations: {config.max_iterations}, max turns: {turns_display}, model: {config.model}"
+    )
 
     if config.yolo:
         warn("YOLO MODE - all permission checks disabled")
@@ -489,13 +491,11 @@ def main() -> None:
                         for line in body.split("\n"):
                             if line.startswith("**Patterns:**"):
                                 exploration.patterns = [
-                                    p.strip()
-                                    for p in line.replace("**Patterns:**", "").split("|")
+                                    p.strip() for p in line.replace("**Patterns:**", "").split("|")
                                 ]
                             elif line.startswith("**Modules:**"):
                                 exploration.relevant_modules = [
-                                    m.strip()
-                                    for m in line.replace("**Modules:**", "").split(",")
+                                    m.strip() for m in line.replace("**Modules:**", "").split(",")
                                 ]
 
             conclusion = run_conclusion_phase(
@@ -564,7 +564,9 @@ def main() -> None:
                 plan_steps = state.get("plan_steps", [])
                 current_step = state.get("current_step")
                 done_count = sum(1 for s in plan_steps if s.get("done"))
-                log(f"Resuming from iteration {state_iteration}, {done_count}/{len(plan_steps)} steps done")
+                log(
+                    f"Resuming from iteration {state_iteration}, {done_count}/{len(plan_steps)} steps done"
+                )
             else:
                 log("No existing state, starting fresh")
 
@@ -682,6 +684,7 @@ def main() -> None:
             work_result=None,
             last_test_error=last_test_error,
             last_review_issues=last_review_issues,
+            last_completion_issues=None,
             iter_state={},
             tests_passed=True,
             step_done=False,

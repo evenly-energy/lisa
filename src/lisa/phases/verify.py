@@ -392,6 +392,79 @@ def run_test_fix_phase(
     log(f"Test fix applied for {failure.command_name}")
 
 
+def run_completion_check(
+    step_id: int,
+    step_desc: str,
+    step_files: list[dict],
+    total_start: float,
+    model: str,
+    yolo: bool,
+    fallback_tools: bool,
+    max_turns: int,
+    debug: bool = False,
+) -> dict:
+    """Check if a step's described goal was actually achieved in the code changes.
+
+    Returns dict with {complete: bool, missing: str|null}.
+    """
+    prompts = get_prompts()
+    schemas = get_schemas()
+
+    # Format step files as context
+    if step_files:
+        lines = []
+        for f in step_files:
+            op = f["op"].upper()
+            parts = []
+            if f.get("template"):
+                parts.append(f"template: {f['template']}")
+            if f.get("detail"):
+                parts.append(f"detail: {f['detail']}")
+            extra = ", ".join(parts)
+            suffix = f" ({extra})" if extra else ""
+            lines.append(f"- {op}: {f['path']}{suffix}")
+        files_context = "\n".join(lines)
+    else:
+        files_context = "(no planned files)"
+
+    prompt = prompts["completion_check"]["template"].format(
+        step_id=step_id,
+        step_desc=step_desc,
+        files_context=files_context,
+    )
+
+    lightweight_turns = calc_turns(max_turns, TURNS_LIGHTWEIGHT)
+
+    timer = LiveTimer("Completion check...", total_start, print_final=False)
+    timer.start()
+    output = work_claude(
+        prompt,
+        model,
+        yolo,
+        fallback_tools,
+        lightweight_turns,
+        json_schema=schemas["completion_check"],
+    )
+    timer.stop(print_final=False)
+
+    debug_log(debug, "Completion check output", output)
+
+    try:
+        result = json.loads(output)
+        debug_log(debug, "Parsed completion check", result)
+        if result.get("complete", False):
+            success_with_conclusion("Completion check PASS", "step goal achieved", raw=True)
+        else:
+            missing = result.get("missing", "unknown")
+            warn_with_conclusion(
+                "Completion check FAIL", missing[:100] if missing else "unknown", raw=True
+            )
+        return result
+    except json.JSONDecodeError:
+        warn("Completion check: JSON parse failed, treating as complete")
+        return {"complete": True, "missing": None}
+
+
 def verify_step(
     step_desc: str,
     task_description: str,
@@ -400,9 +473,29 @@ def verify_step(
     yolo: bool,
     fallback_tools: bool,
     max_turns: int,
+    step_id: int = 0,
+    step_files: Optional[list[dict]] = None,
     debug: bool = False,
 ) -> VerifyResult:
     """Run test/review/fix cycle with early returns."""
+    # Completion check: verify step goal was achieved before running tests
+    if step_id and step_desc:
+        completion = run_completion_check(
+            step_id,
+            step_desc,
+            step_files or [],
+            total_start,
+            model,
+            yolo,
+            fallback_tools,
+            max_turns,
+            debug,
+        )
+        if not completion.get("complete", True):
+            return VerifyResult(
+                passed=False, completion_issues=[completion.get("missing", "unknown")]
+            )
+
     # Calculate turn limits for this verification cycle
     lightweight_turns = calc_turns(max_turns, TURNS_LIGHTWEIGHT)
 

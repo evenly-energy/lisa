@@ -454,6 +454,30 @@ review_light:
     - If approved: {{"approved": true, "issue": null}}
     - If issue found: {{"approved": false, "issue": "brief description"}}
 
+completion_check:
+  description: Verify a step's described goal was actually achieved
+  template: |
+    Verify that this step's goal was achieved in the code changes.
+
+    ## Step {step_id}: {step_desc}
+
+    ## Planned files
+    {files_context}
+
+    ## Instructions
+    1. Run `git diff HEAD` to see what changed
+    2. Compare the diff against the step description above
+    3. If step says "Create X" — verify X exists with real content
+    4. If step says "Add method Y" — verify method Y exists
+    5. Check each planned file was handled (created/modified/deleted)
+
+    Focus ONLY on completeness. Don't check quality, style, or tests.
+    A step is complete if all described work items are present, even if imperfect.
+
+    Output JSON:
+    - If complete: {{"complete": true, "missing": null}}
+    - If incomplete: {{"complete": false, "missing": "brief description of what's missing"}}
+
 coverage_fix:
   description: Add tests to reach 80% coverage
   run: "./gradlew koverVerify"
