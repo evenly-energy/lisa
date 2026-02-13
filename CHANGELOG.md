@@ -7,13 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-13
+
 ### Added
-- CI/CD with GitHub Actions (lint, test matrix for Python 3.11-3.13)
-- Pre-commit hooks (ruff, mypy, coverage badge)
-- Type checking with mypy
-- Coverage tracking and badge
+- **Linear OAuth login**: `lisa login` for browser-based authentication (no more manual API keys)
+- **Layered configuration system**: Deep merge of `defaults/config.yaml` < `~/.config/lisa/config.yaml` < `.lisa/config.yaml`
+- **Comprehensive unit test suite**: 210 tests covering core modules (33% coverage)
+- **Brace expansion in path globs**: Support patterns like `{src,tests}/**/*.py`
+- CI/CD with GitHub Actions (lint job + test matrix for Python 3.11-3.13)
+- Pre-commit hooks (ruff, mypy, coverage badge generation)
+- Type checking with mypy (clean on 37 source files)
+- Coverage tracking and badge (auto-generated to coverage-badge.json)
 - Community documentation (CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md)
-- Issue and PR templates
+- .editorconfig for consistent code formatting
+- src/lisa/py.typed marker for PEP 561 compliance
+
+### Changed
+- **Pre-commit hook failures now auto-retry**: Fix issues instead of bypassing with --no-verify
+- Link iteration header to state comment instead of ticket
+- Inline test retry filter into test command config
+- Fixed type safety in verify.py (bytes/str handling)
+- Organized imports across all source files (ruff I001)
+- Break circular import by moving constants to lisa.constants
+
+### Fixed
+- Pre-commit workflow now fixes failures automatically instead of bypassing validation
 
 ## [0.2.1] - 2026-02-13
 
@@ -50,7 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON schema-based structured output
 - Conclusion/review guide generation
 
-[Unreleased]: https://github.com/evenly-energy/lisa/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/evenly-energy/lisa/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/evenly-energy/lisa/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/evenly-energy/lisa/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/evenly-energy/lisa/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/evenly-energy/lisa/releases/tag/v0.1.0
