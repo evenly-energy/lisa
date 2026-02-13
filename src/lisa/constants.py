@@ -1,4 +1,4 @@
-"""Constants for phase execution."""
+"""Shared constants that must be importable without triggering heavy packages."""
 
 from typing import Optional
 

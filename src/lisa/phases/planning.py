@@ -8,7 +8,7 @@ from lisa.config.prompts import get_prompts
 from lisa.config.schemas import get_schemas
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import RunConfig
-from lisa.phases.constants import EFFORT_PLANNING, resolve_effort
+from lisa.constants import EFFORT_PLANNING, resolve_effort
 from lisa.ui.output import log, warn
 from lisa.ui.timer import LiveTimer
 from lisa.utils.debug import debug_log

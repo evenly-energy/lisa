@@ -20,7 +20,7 @@ from lisa.phases.conclusion import (
     run_conclusion_phase,
     save_conclusion_to_linear,
 )
-from lisa.phases.constants import EFFORT_QUICK, EFFORT_WORK, MAX_FIX_ATTEMPTS, resolve_effort
+from lisa.constants import EFFORT_QUICK, EFFORT_WORK, MAX_FIX_ATTEMPTS, resolve_effort
 from lisa.phases.verify import (
     run_coverage_fix_phase,
     run_coverage_gate,

@@ -4,8 +4,8 @@ import subprocess
 from typing import Optional
 
 from lisa.clients.claude import claude, work_claude
+from lisa.constants import MAX_HOOK_FIX_ATTEMPTS
 from lisa.models.core import Assumption
-from lisa.phases.constants import MAX_HOOK_FIX_ATTEMPTS
 from lisa.ui.output import (
     error,
     error_with_conclusion,

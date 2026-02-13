@@ -30,7 +30,7 @@ from lisa.git.commit import get_changed_files, get_diff_summary
 from lisa.git.worktree import create_session_worktree, remove_worktree
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import RunConfig, WorkContext
-from lisa.phases.constants import EFFORT_QUICK, resolve_effort
+from lisa.constants import EFFORT_QUICK, resolve_effort
 from lisa.phases.planning import run_planning_phase, sort_by_dependencies
 from lisa.phases.verify import run_preflight, run_review_phase
 from lisa.phases.work import process_ticket_work

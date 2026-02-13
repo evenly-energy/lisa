@@ -16,7 +16,7 @@ from lisa.git.commit import get_changed_files
 from lisa.models.core import Assumption
 from lisa.models.results import TestFailure, VerifyResult
 from lisa.models.state import RunConfig
-from lisa.phases.constants import (
+from lisa.constants import (
     DEFAULT_TEST_TIMEOUT,
     EFFORT_LIGHTWEIGHT,
     EFFORT_REVIEW,
