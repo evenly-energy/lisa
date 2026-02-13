@@ -54,7 +54,7 @@ Lisa uses JSON schemas to get predictable Claude responses. Defined in `schemas/
 
 Usage in `clients/claude.py`:
 ```python
-output = work_claude(prompt, model, yolo, fallback_tools, max_turns, json_schema=schemas["work"])
+output = work_claude(prompt, model, yolo, fallback_tools, effort, json_schema=schemas["work"])
 result = json.loads(output)  # Guaranteed to match schema
 ```
 
@@ -94,3 +94,4 @@ Lisa runs tests for *target projects* (via `verify.py`), not itself. Test comman
 - Backwards compat: reads both `Lisa-*` and `Tralph-*` git trailers
 - No push by default (use --push flag)
 - Haiku model: only use for data extraction from text, never for code analysis or review
+- Version derived from git tags via `hatch-vcs` — just `git tag vX.Y.Z` to release

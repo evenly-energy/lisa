@@ -1,6 +1,6 @@
 [project]
 name = "lisa"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Looping Implementor Saving Assumptions - Autonomous Linear ticket implementation with Claude"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,8 +22,11 @@ dev = [
 lisa = "lisa.cli:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lisa"]

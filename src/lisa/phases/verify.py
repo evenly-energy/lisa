@@ -27,6 +27,50 @@ from lisa.ui.timer import LiveTimer
 from lisa.utils.debug import debug_log
 
 
+def run_preflight() -> bool:
+    """Run all test and format commands unconditionally. Returns True if all pass."""
+    prompts = get_prompts()
+
+    test_commands = prompts.get("test", {}).get("commands", [])
+    format_commands = prompts.get("format", {}).get("commands", [])
+    all_commands = [(c, DEFAULT_TEST_TIMEOUT) for c in test_commands] + [
+        (c, 120) for c in format_commands
+    ]
+
+    if not all_commands:
+        log("Preflight: no commands configured")
+        return True
+
+    for cmd, timeout in all_commands:
+        cmd_name = cmd["name"]
+        run_cmd = cmd["run"]
+        log(f"Preflight: {cmd_name}...")
+
+        try:
+            result = subprocess.run(
+                run_cmd,
+                shell=True,  # nosemgrep: subprocess-shell-true
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            warn(f"Preflight FAIL: {cmd_name} timed out after {timeout}s")
+            return False
+
+        if result.returncode != 0:
+            warn(f"Preflight FAIL: {cmd_name}")
+            # Print last 3000 chars of output for context
+            output = result.stdout[-3000:] if result.stdout else "(no output)"
+            print(output)
+            return False
+
+        success_with_conclusion(f"Preflight PASS: {cmd_name}", "", raw=True)
+
+    return True
+
+
 def matches_pattern(filepath: str, pattern: str) -> bool:
     """Check if filepath matches a glob pattern."""
     return fnmatch.fnmatch(filepath, pattern)

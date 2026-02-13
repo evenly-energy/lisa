@@ -52,6 +52,7 @@ class RunConfig:
     review_only: bool = False
     conclusion: bool = False
     worktree: bool = False
+    preflight: bool = False
 
 
 @dataclass

@@ -32,7 +32,7 @@ from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import RunConfig, WorkContext
 from lisa.phases.constants import EFFORT_QUICK, resolve_effort
 from lisa.phases.planning import run_planning_phase, sort_by_dependencies
-from lisa.phases.verify import run_review_phase
+from lisa.phases.verify import run_preflight, run_review_phase
 from lisa.phases.work import process_ticket_work
 from lisa.phases.conclusion import print_conclusion, run_conclusion_phase
 from lisa.state.comment import fetch_state, find_state_comment, save_state
@@ -243,6 +243,12 @@ Tips:
         action="store_true",
         help="Run in a temporary worktree (auto-cleaned on exit)",
     )
+    parser.add_argument(
+        "-c",
+        "--preflight",
+        action="store_true",
+        help="Run all tests/linting before starting to verify clean codebase state",
+    )
     args = parser.parse_args()
     return RunConfig(
         ticket_ids=args.tickets,
@@ -262,6 +268,7 @@ Tips:
         review_only=args.review_only,
         conclusion=args.conclusion,
         worktree=args.worktree,
+        preflight=args.preflight,
     )
 
 
@@ -294,6 +301,8 @@ def log_config(config: RunConfig) -> None:
         log("Planning phase disabled, using subtasks directly")
     if config.debug:
         log(f"Debug logging to {DEBUG_LOG}")
+    if config.preflight:
+        log("Preflight checks enabled")
     if config.dry_run:
         log(f"{YELLOW}DRY RUN MODE - no changes will be made{NC}")
     if not config.push:
@@ -374,6 +383,15 @@ def main() -> None:
     log_config(config)
 
     total_start = time.time()
+
+    # Preflight: verify codebase is clean before starting
+    if config.preflight:
+        log("Running preflight checks...")
+        if not run_preflight():
+            error("Preflight failed - fix issues before running lisa")
+            sys.exit(1)
+        success("Preflight passed")
+
     num_tickets = len(config.ticket_ids)
     failed_tickets: list[str] = []
 
