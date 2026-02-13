@@ -1,5 +1,6 @@
 # Lisa prompts and configuration
-# Override this file by placing your own prompts.yaml in .lisa/ directory
+# Override per-project: .lisa/prompts.yaml | globally: ~/.config/lisa/prompts.yaml
+# Only specify keys you want to change — deep merge keeps the rest
 
 # Project configuration
 config:

@@ -185,11 +185,38 @@ lisa ENG-123 ENG-456 ENG-789
 ```
 Processed serially. Each ticket gets its own branch and state.
 
-## Project Configuration
+## Configuration
 
 > Note: Lisa was built for the evenly-platform stack (Kotlin/Gradle backend, TypeScript frontend) and defaults reflect that. Any stack works with config overrides.
 
-Override defaults with `.lisa/prompts.yaml` in your project:
+Config files are deep-merged in order (later wins):
+
+| Layer | Path | Scope |
+|-------|------|-------|
+| Defaults | bundled `prompts/default.yaml` | Ships with Lisa |
+| Global | `~/.config/lisa/prompts.yaml` | All projects |
+| Project | `.lisa/prompts.yaml` | Current repo |
+
+Deep merge means you only need to specify the keys you want to change — everything else keeps its default value. Dicts merge recursively, lists and scalars replace.
+
+```yaml
+# ~/.config/lisa/prompts.yaml — personal defaults across all projects
+config:
+  fallback_tools: >-
+    Read Edit Write Grep Glob Bash(git:*) Bash(npm:*)
+```
+
+```yaml
+# .lisa/prompts.yaml — project-specific overrides
+config:
+  test_filter_format: '--tests "*{test_name}"'
+```
+
+Active overrides are logged at startup.
+
+### Overridable sections
+
+Override defaults in `.lisa/prompts.yaml` (or `~/.config/lisa/prompts.yaml`):
 
 ```yaml
 config:
