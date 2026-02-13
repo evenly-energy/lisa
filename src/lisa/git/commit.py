@@ -3,9 +3,17 @@
 import subprocess
 from typing import Optional
 
-from lisa.clients.claude import claude
+from lisa.clients.claude import claude, work_claude
 from lisa.models.core import Assumption
-from lisa.ui.output import error, error_with_conclusion, log, success_with_conclusion, warn_with_conclusion
+from lisa.phases.constants import MAX_HOOK_FIX_ATTEMPTS
+from lisa.ui.output import (
+    error,
+    error_with_conclusion,
+    log,
+    success_with_conclusion,
+    warn,
+    warn_with_conclusion,
+)
 
 
 def get_changed_files() -> list[str]:
@@ -64,6 +72,16 @@ def format_assumptions_trailer(assumptions: list[Assumption]) -> str:
     return "; ".join(selected)
 
 
+def _get_staged_files() -> list[str]:
+    """Return list of staged file paths from git diff --cached --name-only."""
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"], capture_output=True, text=True
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+    return [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
+
+
 def git_commit(
     commit_ticket_id: str,
     iteration: int,
@@ -74,6 +92,10 @@ def git_commit(
     files_to_add: Optional[list[str]] = None,
     assumptions: Optional[list[Assumption]] = None,
     allow_no_verify: bool = True,
+    max_hook_fix_attempts: int = MAX_HOOK_FIX_ATTEMPTS,
+    model: Optional[str] = None,
+    yolo: bool = False,
+    fallback_tools: bool = False,
 ) -> bool:
     """Commit changes, optionally push. Returns True on success.
 
@@ -89,9 +111,7 @@ def git_commit(
 
     # Add specific files or all
     if files_to_add:
-        result = subprocess.run(
-            ["git", "add", "--"] + files_to_add, capture_output=True, text=True
-        )
+        result = subprocess.run(["git", "add", "--"] + files_to_add, capture_output=True, text=True)
     else:
         result = subprocess.run(["git", "add", "-A"], capture_output=True, text=True)
     if result.returncode != 0:
@@ -126,22 +146,59 @@ def git_commit(
 
     result = subprocess.run(["git", "commit", "-m", msg], capture_output=True, text=True)
     if result.returncode != 0:
-        if not allow_no_verify:
-            error_with_conclusion("Commit failed", result.stderr.strip(), raw=True)
-            return False
-        # Retry with --no-verify, add [no verify] tag to title
-        warn_with_conclusion(
-            "Commit failed", "retrying with --no-verify (hooks bypassed)", raw=True
-        )
-        msg_lines = msg.split("\n", 1)
-        msg_lines[0] += " [no verify]"
-        msg = "\n".join(msg_lines)
-        result = subprocess.run(
-            ["git", "commit", "--no-verify", "-m", msg], capture_output=True, text=True
-        )
+        hook_output = result.stderr.strip()
+
+        # Try fix loop if model is available
+        if model and max_hook_fix_attempts > 0:
+            for attempt in range(1, max_hook_fix_attempts + 1):
+                staged_files = _get_staged_files()
+                if not staged_files:
+                    staged_files = files_to_add or []
+                files_list = "\n".join(staged_files)
+
+                warn(f"Pre-commit hook failed (fix attempt {attempt}/{max_hook_fix_attempts})")
+
+                fix_prompt = (
+                    f"Pre-commit hooks failed on commit. Fix the lint/format issues.\n\n"
+                    f"Hook output:\n```\n{hook_output}\n```\n\n"
+                    f"Staged files:\n{files_list}\n\n"
+                    f"Read the failing files, fix ONLY hook/lint/format issues. "
+                    f"Do NOT change functionality. Do NOT run git commit."
+                )
+                work_claude(fix_prompt, model, yolo, fallback_tools, effort="low")
+
+                # Re-stage the fixed files
+                if staged_files:
+                    subprocess.run(
+                        ["git", "add", "--"] + staged_files, capture_output=True, text=True
+                    )
+
+                # Retry commit
+                result = subprocess.run(
+                    ["git", "commit", "-m", msg], capture_output=True, text=True
+                )
+                if result.returncode == 0:
+                    break
+                hook_output = result.stderr.strip()
+
+        # If still failing after fix attempts
         if result.returncode != 0:
-            error(f"git commit failed: {result.stderr}")
-            return False
+            if not allow_no_verify:
+                error_with_conclusion("Commit failed", result.stderr.strip(), raw=True)
+                return False
+            # Fall back to --no-verify
+            warn_with_conclusion(
+                "Commit failed", "retrying with --no-verify (hooks bypassed)", raw=True
+            )
+            msg_lines = msg.split("\n", 1)
+            msg_lines[0] += " [no verify]"
+            msg = "\n".join(msg_lines)
+            result = subprocess.run(
+                ["git", "commit", "--no-verify", "-m", msg], capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                error(f"git commit failed: {result.stderr}")
+                return False
 
     # Get short SHA for display
     sha_result = subprocess.run(

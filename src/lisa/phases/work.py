@@ -523,6 +523,9 @@ def handle_commit_changes(ctx: WorkContext) -> WorkState:
             push=ctx.config.push,
             files_to_add=files_this_step,
             assumptions=commit_assumptions,
+            model=ctx.config.model,
+            yolo=ctx.config.yolo,
+            fallback_tools=ctx.config.fallback_tools,
         ):
             warn("Commit failed - changes not committed")
         elif not ctx.tests_passed:
@@ -609,6 +612,9 @@ def handle_all_done(ctx: WorkContext) -> None:
             push=ctx.config.push,
             files_to_add=remaining_changes,
             allow_no_verify=False,
+            model=ctx.config.model,
+            yolo=ctx.config.yolo,
+            fallback_tools=ctx.config.fallback_tools,
         ):
             warn("Final commit failed - changes not committed")
 
@@ -645,6 +651,9 @@ def handle_all_done(ctx: WorkContext) -> None:
                     "add tests for coverage",
                     push=ctx.config.push,
                     files_to_add=test_changes,
+                    model=ctx.config.model,
+                    yolo=ctx.config.yolo,
+                    fallback_tools=ctx.config.fallback_tools,
                 )
             coverage_passed, coverage_error = run_coverage_gate(ctx.total_start, ctx.config.debug)
 

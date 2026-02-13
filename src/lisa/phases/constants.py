@@ -14,6 +14,7 @@ EFFORT_RANK = {"low": 0, "medium": 1, "high": 2}
 
 # Limits
 MAX_FIX_ATTEMPTS = 4  # Complex issues often need 3-5 attempts
+MAX_HOOK_FIX_ATTEMPTS = 2  # Pre-commit hook fix attempts before --no-verify fallback
 MAX_ISSUE_REPEATS = 3  # Only exit after same issue repeats this many times
 DEFAULT_TEST_TIMEOUT = 600
 
