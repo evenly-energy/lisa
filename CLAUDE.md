@@ -93,3 +93,4 @@ Lisa runs tests for *target projects* (via `verify.py`), not itself. Test comman
 - Structured output via JSON schemas
 - Backwards compat: reads both `Lisa-*` and `Tralph-*` git trailers
 - No push by default (use --push flag)
+- Haiku model: only use for data extraction from text, never for code analysis or review
