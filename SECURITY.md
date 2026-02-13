@@ -14,7 +14,7 @@ We release patches for security vulnerabilities for the following versions:
 **Please do not report security vulnerabilities through public GitHub issues.**
 
 Instead, please report security vulnerabilities to:
-- **Email**: security@evenly.no
+- **Email**: dev@evenly.no
 - **Subject**: [SECURITY] Lisa - Brief Description
 
 ### What to Include
