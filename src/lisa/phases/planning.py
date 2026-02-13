@@ -6,9 +6,9 @@ from typing import Optional
 from lisa.clients.claude import work_claude
 from lisa.config.prompts import get_prompts
 from lisa.config.schemas import get_schemas
+from lisa.constants import EFFORT_PLANNING, resolve_effort
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import RunConfig
-from lisa.constants import EFFORT_PLANNING, resolve_effort
 from lisa.ui.output import log, warn
 from lisa.ui.timer import LiveTimer
 from lisa.utils.debug import debug_log
@@ -28,7 +28,7 @@ def sort_by_dependencies(subtasks: list) -> list:
         s["_blocked_by"] = [b for b in s.get("blockedBy", []) if b in subtask_ids]
 
     # Kahn's algorithm for topological sort
-    result = []
+    result: list[dict] = []
     remaining = list(subtasks)
 
     while remaining:

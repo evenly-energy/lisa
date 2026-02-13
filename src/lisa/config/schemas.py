@@ -20,20 +20,20 @@ def load_schemas(path: Optional[Path] = None) -> dict:
     """
     if path and path.exists():
         with open(path) as f:
-            return yaml.safe_load(f)
+            return yaml.safe_load(f)  # type: ignore[no-any-return]
 
     # Load bundled defaults
     try:
         files = importlib.resources.files("lisa")
         schemas_path = files / "schemas" / "default.yaml"
         content = schemas_path.read_text()
-        return yaml.safe_load(content)
+        return yaml.safe_load(content)  # type: ignore[no-any-return]
     except (FileNotFoundError, TypeError):
         # Fallback to relative path during development
         dev_path = Path(__file__).parent.parent.parent.parent / "schemas" / "default.yaml"
         if dev_path.exists():
             with open(dev_path) as f:
-                return yaml.safe_load(f)
+                return yaml.safe_load(f)  # type: ignore[no-any-return]
         raise FileNotFoundError("Could not find schemas file")
 
 

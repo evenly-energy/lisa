@@ -37,7 +37,12 @@ class TestAssumption:
     def test_to_dict(self):
         a = Assumption(id="P.1", selected=True, statement="Use Redis", rationale="In stack")
         d = a.to_dict()
-        assert d == {"id": "P.1", "selected": True, "statement": "Use Redis", "rationale": "In stack"}
+        assert d == {
+            "id": "P.1",
+            "selected": True,
+            "statement": "Use Redis",
+            "rationale": "In stack",
+        }
 
     def test_from_dict(self):
         a = Assumption.from_dict({"id": "1.1", "selected": False, "statement": "Skip it"})
@@ -62,7 +67,9 @@ class TestAssumption:
 
 class TestExplorationFindings:
     def test_to_dict(self):
-        e = ExplorationFindings(patterns=["p1"], relevant_modules=["m1"], similar_implementations=[{"file": "f"}])
+        e = ExplorationFindings(
+            patterns=["p1"], relevant_modules=["m1"], similar_implementations=[{"file": "f"}]
+        )
         d = e.to_dict()
         assert d["patterns"] == ["p1"]
         assert d["relevant_modules"] == ["m1"]
@@ -80,7 +87,9 @@ class TestExplorationFindings:
 
     def test_roundtrip(self):
         original = ExplorationFindings(
-            patterns=["p"], relevant_modules=["m"], similar_implementations=[{"file": "f", "relevance": "r"}]
+            patterns=["p"],
+            relevant_modules=["m"],
+            similar_implementations=[{"file": "f", "relevance": "r"}],
         )
         rebuilt = ExplorationFindings.from_dict(original.to_dict())
         assert rebuilt.patterns == original.patterns
@@ -146,7 +155,9 @@ class TestWorkContext:
             review_status="skipped",
             comment_id=None,
             log_entries=[],
-            config=RunConfig(ticket_ids=["ENG-1"], max_iterations=10, effort="high", model="sonnet"),
+            config=RunConfig(
+                ticket_ids=["ENG-1"], max_iterations=10, effort="high", model="sonnet"
+            ),
         )
         defaults.update(kwargs)
         return WorkContext(**defaults)

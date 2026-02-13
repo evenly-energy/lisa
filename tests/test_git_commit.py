@@ -56,7 +56,9 @@ class TestGetChangedFiles:
     def test_modified_files(self, mocker):
         mocker.patch(
             "lisa.git.commit.subprocess.run",
-            return_value=subprocess.CompletedProcess([], 0, stdout=" M src/foo.py\n M src/bar.py\n", stderr=""),
+            return_value=subprocess.CompletedProcess(
+                [], 0, stdout=" M src/foo.py\n M src/bar.py\n", stderr=""
+            ),
         )
         result = get_changed_files()
         assert "src/foo.py" in result
@@ -73,7 +75,9 @@ class TestGetChangedFiles:
     def test_renamed_files(self, mocker):
         mocker.patch(
             "lisa.git.commit.subprocess.run",
-            return_value=subprocess.CompletedProcess([], 0, stdout="R  old.py -> new.py\n", stderr=""),
+            return_value=subprocess.CompletedProcess(
+                [], 0, stdout="R  old.py -> new.py\n", stderr=""
+            ),
         )
         result = get_changed_files()
         assert "new.py" in result

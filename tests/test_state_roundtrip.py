@@ -26,7 +26,9 @@ class TestAssumptionRoundtrip:
         assert parsed[0].selected is False
 
     def test_with_rationale(self):
-        original = [Assumption(id="P.1", selected=True, statement="Use Redis", rationale="In stack")]
+        original = [
+            Assumption(id="P.1", selected=True, statement="Use Redis", rationale="In stack")
+        ]
         md = format_assumptions_markdown(original)
         parsed = parse_assumptions_markdown(md)
         assert parsed[0].rationale == "In stack"
@@ -59,7 +61,11 @@ class TestStateCommentRoundtrip:
             Assumption(id="1.1", selected=False, statement="Skip it"),
         ]
         body = build_state_comment(
-            "eng-71-test", 5, 2, steps, ["log1", "log2"],
+            "eng-71-test",
+            5,
+            2,
+            steps,
+            ["log1", "log2"],
             assumptions=assumptions,
         )
         parsed = parse_state_comment(body)

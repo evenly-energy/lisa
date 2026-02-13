@@ -1,5 +1,10 @@
 # Lisa - Looping Implementor Saving Assumptions
 
+[![CI](https://github.com/evenly-energy/lisa/actions/workflows/ci.yml/badge.svg)](https://github.com/evenly-energy/lisa/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/evenly-energy/lisa/main/coverage-badge.json)](https://github.com/evenly-energy/lisa/blob/main/coverage-badge.json)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+
 > Autonomous ticket implementation that never loses context.
 
 What if your ticket backlog could implement itself?

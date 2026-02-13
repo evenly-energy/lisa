@@ -3,9 +3,7 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from lisa.clients.claude import claude
-    from lisa.config.prompts import get_prompts
-    from lisa.config.schemas import get_schemas
+    pass
 
 # Colors
 RED = "\033[0;31m"
@@ -65,11 +63,11 @@ def generate_conclusion(context: str) -> str:
 
     _init_conclusion_deps()
 
-    prompt = _prompts["conclusion"]["template"].format(context=context[:MAX_CONTEXT_CHARS])
-    result = _claude_fn(prompt, model="haiku", allowed_tools="", json_schema=_schemas["conclusion"])
+    prompt = _prompts["conclusion"]["template"].format(context=context[:MAX_CONTEXT_CHARS])  # type: ignore[index]
+    result = _claude_fn(prompt, model="haiku", allowed_tools="", json_schema=_schemas["conclusion"])  # type: ignore[misc,index]
     try:
         data = json.loads(result)
-        return data.get("text", "")[:80]
+        return data.get("text", "")[:80]  # type: ignore[no-any-return]
     except json.JSONDecodeError:
         return result.strip()[:80]
 

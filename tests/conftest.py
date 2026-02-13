@@ -8,10 +8,14 @@ from lisa.models.core import Assumption, ExplorationFindings
 @pytest.fixture
 def sample_assumptions():
     return [
-        Assumption(id="P.1", selected=True, statement="Use Redis for caching", rationale="Already in stack"),
+        Assumption(
+            id="P.1", selected=True, statement="Use Redis for caching", rationale="Already in stack"
+        ),
         Assumption(id="P.2", selected=False, statement="Add new dependency", rationale="Too heavy"),
         Assumption(id="1.1", selected=True, statement="Reuse auth module"),
-        Assumption(id="2.1", selected=False, statement="Skip migration", rationale="Data loss risk"),
+        Assumption(
+            id="2.1", selected=False, statement="Skip migration", rationale="Data loss risk"
+        ),
     ]
 
 

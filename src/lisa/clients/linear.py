@@ -25,7 +25,7 @@ def _get_auth_header() -> Optional[str]:
     return None
 
 
-def linear_api(query: str, variables: dict = None) -> Optional[dict]:
+def linear_api(query: str, variables: Optional[dict] = None) -> Optional[dict]:
     """Direct GraphQL call to Linear API. Returns None on error."""
     auth = _get_auth_header()
     if not auth:
@@ -46,7 +46,7 @@ def linear_api(query: str, variables: dict = None) -> Optional[dict]:
             if "errors" in result:
                 error(f"Linear GraphQL error: {result['errors']}")
                 return None
-            return result.get("data")
+            return result.get("data")  # type: ignore[no-any-return]
     except urllib.error.HTTPError as e:
         error(f"Linear API HTTP {e.code}: {e.reason}")
         return None

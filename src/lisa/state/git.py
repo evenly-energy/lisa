@@ -60,11 +60,11 @@ def fetch_git_state(branch_name: str, subtask_id: Optional[str] = None) -> dict:
                         pass
                 elif line.startswith(f"{prefix}Files:"):
                     files_str = line.split(":", 1)[1].strip()
-                    state["files"] = [f.strip() for f in files_str.split(",") if f.strip()]
+                    state["files"] = [f.strip() for f in files_str.split(",") if f.strip()]  # type: ignore[assignment]
                 elif line.startswith(f"{prefix}Errors:"):
-                    state["errors"] = line.split(":", 1)[1].strip()
+                    state["errors"] = line.split(":", 1)[1].strip()  # type: ignore[assignment]
                 elif line.startswith(f"{prefix}Fixes:"):
-                    state["fixes"] = line.split(":", 1)[1].strip()
+                    state["fixes"] = line.split(":", 1)[1].strip()  # type: ignore[assignment]
                 elif line.startswith(f"{prefix}Test-Error:"):
                     val = line.split(":", 1)[1].strip()
                     if is_first_commit and val != "none":

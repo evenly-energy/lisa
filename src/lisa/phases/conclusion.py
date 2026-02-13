@@ -8,9 +8,9 @@ from typing import Optional
 from lisa.clients.claude import work_claude
 from lisa.config.prompts import get_prompts
 from lisa.config.schemas import get_schemas
+from lisa.constants import EFFORT_REVIEW, resolve_effort
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import RunConfig
-from lisa.constants import EFFORT_REVIEW, resolve_effort
 from lisa.state.comment import find_state_comment, update_comment
 from lisa.ui.output import BLUE, GREEN, NC, RED, YELLOW, warn
 from lisa.ui.timer import LiveTimer
@@ -127,7 +127,7 @@ def run_conclusion_phase(
     try:
         result = json.loads(output)
         debug_log(config, "Parsed conclusion result", result)
-        return result
+        return result  # type: ignore[no-any-return]
     except json.JSONDecodeError as e:
         debug_log(config, "Conclusion JSON parse error", str(e))
         warn(f"Failed to parse conclusion output: {e}")

@@ -25,12 +25,12 @@ def _load_defaults() -> dict:
         files = importlib.resources.files("lisa")
         prompts_path = files / "prompts" / "default.yaml"
         content = prompts_path.read_text()
-        return yaml.safe_load(content)
+        return yaml.safe_load(content)  # type: ignore[no-any-return]
     except (FileNotFoundError, TypeError):
         dev_path = Path(__file__).parent.parent.parent.parent / "prompts" / "default.yaml"
         if dev_path.exists():
             with open(dev_path) as f:
-                return yaml.safe_load(f)
+                return yaml.safe_load(f)  # type: ignore[no-any-return]
         raise FileNotFoundError("Could not find prompts file")
 
 

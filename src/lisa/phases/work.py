@@ -11,6 +11,7 @@ from lisa.clients.linear import fetch_subtask_details
 from lisa.config.prompts import get_prompts
 from lisa.config.schemas import get_schemas
 from lisa.config.settings import get_config
+from lisa.constants import EFFORT_QUICK, EFFORT_WORK, MAX_FIX_ATTEMPTS, resolve_effort
 from lisa.git.commit import get_changed_files, get_diff_summary, git_commit, summarize_for_commit
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import WorkContext, WorkState
@@ -20,7 +21,6 @@ from lisa.phases.conclusion import (
     run_conclusion_phase,
     save_conclusion_to_linear,
 )
-from lisa.constants import EFFORT_QUICK, EFFORT_WORK, MAX_FIX_ATTEMPTS, resolve_effort
 from lisa.phases.verify import (
     run_coverage_fix_phase,
     run_coverage_gate,
@@ -34,6 +34,7 @@ from lisa.state.comment import save_state
 from lisa.state.git import fetch_git_state
 from lisa.ui.output import (
     BLUE,
+    GRAY,
     GREEN,
     NC,
     RED,
@@ -131,9 +132,6 @@ def log_step_files(files: list[dict]) -> None:
         detail = f.get("detail", "")
         suffix = f" {GRAY}({detail}){NC}" if detail else ""
         log(f"  {color}{op.upper()}{NC} {filename}{suffix}")
-
-
-from lisa.ui.output import GRAY
 
 
 def handle_select_step(ctx: WorkContext) -> WorkState:
@@ -316,6 +314,7 @@ Address these review issues before marking the step as done.
 
 def handle_assumptions(ctx: WorkContext) -> WorkState:
     """Extract and optionally edit assumptions."""
+    assert ctx.work_result is not None
     work_assumptions = [
         Assumption(
             id=str(a["id"]),
@@ -366,6 +365,7 @@ def display_assumptions(assumptions: list[Assumption]) -> None:
 
 def handle_check_completion(ctx: WorkContext) -> WorkState:
     """Evaluate work result: blocked, in-progress, or done."""
+    assert ctx.work_result is not None
     ctx.step_done = False
     ctx.tests_passed = True
     ctx.review_status = "skipped"
@@ -423,6 +423,8 @@ def handle_verify_step(ctx: WorkContext) -> WorkState:
     current_step_obj = next((s for s in ctx.plan_steps if s["id"] == ctx.current_step), None)
     step_files = current_step_obj.get("files", []) if current_step_obj else []
 
+    assert ctx.step_desc is not None
+    assert ctx.current_step is not None
     verify = verify_step(
         ctx.step_desc,
         ctx.description,
@@ -510,6 +512,7 @@ def handle_commit_changes(ctx: WorkContext) -> WorkState:
         files_after_format = set(get_changed_files())
         files_this_step = list(files_after_format - files_before)
 
+        assert ctx.step_desc is not None
         fail_marker = "[FAIL] " if not ctx.tests_passed else ""
         short_desc = summarize_for_commit(ctx.step_desc)
         commit_title = f"{fail_marker}step {ctx.current_step}: {short_desc}"

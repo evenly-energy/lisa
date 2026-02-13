@@ -66,7 +66,9 @@ class TestFormatStepFiles:
         assert "CREATE: src/new.py" in result
 
     def test_with_template_and_detail(self):
-        files = [{"op": "create", "path": "src/new.py", "template": "handler", "detail": "REST API"}]
+        files = [
+            {"op": "create", "path": "src/new.py", "template": "handler", "detail": "REST API"}
+        ]
         result = format_step_files(files)
         assert "template: handler" in result
         assert "detail: REST API" in result

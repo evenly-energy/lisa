@@ -42,7 +42,7 @@ def list_comments(issue_id: str) -> list[dict]:
     data = linear_api(query, {"id": issue_id})
     if not data or not data.get("issue"):
         return []
-    return data["issue"].get("comments", {}).get("nodes", [])
+    return data["issue"].get("comments", {}).get("nodes", [])  # type: ignore[no-any-return]
 
 
 def find_state_comment(issue_id: str, branch_name: str) -> Optional[dict]:
@@ -73,7 +73,7 @@ def create_comment(issue_id: str, body: str) -> Optional[str]:
     data = linear_api(mutation, {"issueId": issue_id, "body": body})
     if not data or not data.get("commentCreate", {}).get("success"):
         return None
-    return data["commentCreate"]["comment"]["id"]
+    return data["commentCreate"]["comment"]["id"]  # type: ignore[no-any-return]
 
 
 def update_comment(comment_id: str, body: str) -> bool:
@@ -86,7 +86,7 @@ def update_comment(comment_id: str, body: str) -> bool:
     }
     """
     data = linear_api(mutation, {"id": comment_id, "body": body})
-    return data and data.get("commentUpdate", {}).get("success", False)
+    return bool(data and data.get("commentUpdate", {}).get("success", False))
 
 
 def parse_state_comment(body: str) -> dict:
@@ -94,7 +94,7 @@ def parse_state_comment(body: str) -> dict:
 
     Returns dict with iterations, current_step, plan_steps.
     """
-    result = {"iterations": 0, "current_step": None, "plan_steps": []}
+    result: dict = {"iterations": 0, "current_step": None, "plan_steps": []}
 
     # Parse plan checklist
     for line in body.split("\n"):
@@ -308,7 +308,7 @@ def save_state(
     plan_steps: Optional[list] = None,
     comment_id: Optional[str] = None,
     log_entry: str = "",
-    existing_log: list[str] = None,
+    existing_log: Optional[list[str]] = None,
     assumptions: Optional[list[Assumption]] = None,
     exploration: Optional[ExplorationFindings] = None,
 ) -> Optional[str]:

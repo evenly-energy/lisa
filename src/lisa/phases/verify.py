@@ -12,10 +12,6 @@ from lisa.clients.claude import claude, work_claude
 from lisa.config.prompts import get_prompts
 from lisa.config.schemas import get_schemas
 from lisa.config.settings import get_config
-from lisa.git.commit import get_changed_files
-from lisa.models.core import Assumption
-from lisa.models.results import TestFailure, VerifyResult
-from lisa.models.state import RunConfig
 from lisa.constants import (
     DEFAULT_TEST_TIMEOUT,
     EFFORT_LIGHTWEIGHT,
@@ -24,6 +20,10 @@ from lisa.constants import (
     MAX_ISSUE_REPEATS,
     resolve_effort,
 )
+from lisa.git.commit import get_changed_files
+from lisa.models.core import Assumption
+from lisa.models.results import TestFailure, VerifyResult
+from lisa.models.state import RunConfig
 from lisa.ui.output import log, success_with_conclusion, warn, warn_with_conclusion
 from lisa.ui.timer import LiveTimer
 from lisa.utils.debug import debug_log
@@ -200,7 +200,7 @@ def run_test_phase(
             )
             failure = TestFailure(
                 command_name=cmd_name,
-                output=output,
+                output=str(output),
                 summary=f"Timed out after {DEFAULT_TEST_TIMEOUT}s",
                 failed_tests=[],
             )
@@ -233,11 +233,12 @@ def run_test_phase(
             # Write debug log with extracted output
             failure_log = Path(".lisa/test-failure.log")
             failure_log.parent.mkdir(exist_ok=True)
-            failure_log.write_text(f"=== {cmd_name} failure ===\n\n{output}\n")
+            output_str = str(output) if isinstance(output, bytes) else output
+            failure_log.write_text(f"=== {cmd_name} failure ===\n\n{output_str}\n")
 
             failure = TestFailure(
                 command_name=cmd_name,
-                output=output,
+                output=output_str,
                 summary=summary,
                 failed_tests=extracted_tests,
             )
@@ -478,7 +479,7 @@ def run_completion_check(
             warn_with_conclusion(
                 "Completion check FAIL", missing[:100] if missing else "unknown", raw=True
             )
-        return result
+        return result  # type: ignore[no-any-return]
     except json.JSONDecodeError:
         warn("Completion check: JSON parse failed, treating as complete")
         return {"complete": True, "missing": None}
@@ -507,6 +508,7 @@ def verify_step(
             model,
             yolo,
             fallback_tools,
+            effort,
             debug,
         )
         if not completion.get("complete", True):

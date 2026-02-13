@@ -108,36 +108,46 @@ class TestFormatAssumptionsMarkdown:
         assert format_assumptions_markdown([]) == ""
 
     def test_selected_emoji(self):
-        md = format_assumptions_markdown([
-            Assumption(id="P.1", selected=True, statement="Use Redis"),
-        ])
+        md = format_assumptions_markdown(
+            [
+                Assumption(id="P.1", selected=True, statement="Use Redis"),
+            ]
+        )
         assert "✅ P.1. Use Redis" in md
 
     def test_rejected_emoji(self):
-        md = format_assumptions_markdown([
-            Assumption(id="P.2", selected=False, statement="Add dep"),
-        ])
+        md = format_assumptions_markdown(
+            [
+                Assumption(id="P.2", selected=False, statement="Add dep"),
+            ]
+        )
         assert "❌ P.2. Add dep" in md
 
     def test_rationale_lines(self):
-        md = format_assumptions_markdown([
-            Assumption(id="P.1", selected=True, statement="Use Redis", rationale="In stack"),
-        ])
+        md = format_assumptions_markdown(
+            [
+                Assumption(id="P.1", selected=True, statement="Use Redis", rationale="In stack"),
+            ]
+        )
         assert "*In stack*" in md
 
     def test_planning_group(self):
-        md = format_assumptions_markdown([
-            Assumption(id="P.1", selected=True, statement="A"),
-            Assumption(id="P.2", selected=False, statement="B"),
-        ])
+        md = format_assumptions_markdown(
+            [
+                Assumption(id="P.1", selected=True, statement="A"),
+                Assumption(id="P.2", selected=False, statement="B"),
+            ]
+        )
         assert "## Assumptions" in md
         assert "P.1" in md
         assert "P.2" in md
 
     def test_work_group(self):
-        md = format_assumptions_markdown([
-            Assumption(id="1.1", selected=True, statement="Work thing"),
-        ])
+        md = format_assumptions_markdown(
+            [
+                Assumption(id="1.1", selected=True, statement="Work thing"),
+            ]
+        )
         assert "1.1" in md
 
 

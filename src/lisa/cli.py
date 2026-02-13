@@ -18,6 +18,7 @@ except Exception:
 
 from lisa.clients.claude import token_tracker
 from lisa.clients.linear import fetch_ticket
+from lisa.constants import EFFORT_QUICK, resolve_effort
 from lisa.git.branch import (
     create_or_get_branch,
     determine_branch_name,
@@ -26,15 +27,14 @@ from lisa.git.branch import (
     get_current_branch,
     list_branches_matching,
 )
-from lisa.git.commit import get_changed_files, get_diff_summary
+from lisa.git.commit import get_diff_summary
 from lisa.git.worktree import create_session_worktree, remove_worktree
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import RunConfig, WorkContext
-from lisa.constants import EFFORT_QUICK, resolve_effort
+from lisa.phases.conclusion import print_conclusion, run_conclusion_phase
 from lisa.phases.planning import run_planning_phase, sort_by_dependencies
 from lisa.phases.verify import run_preflight, run_review_phase
 from lisa.phases.work import process_ticket_work
-from lisa.phases.conclusion import print_conclusion, run_conclusion_phase
 from lisa.state.comment import fetch_state, find_state_comment, save_state
 from lisa.state.git import fetch_git_state
 from lisa.ui.assumptions import edit_assumptions_curses
@@ -578,7 +578,7 @@ def main() -> None:
             sys.exit(0)
 
         # 2. Determine branch (skip in dry-run mode)
-        branch_name: Optional[str] = None
+        branch_name = None  # type: ignore[assignment]
 
         if not config.dry_run:
             if config.worktree:
@@ -593,16 +593,16 @@ def main() -> None:
                     log(f"Creating branch {branch_name}")
 
                 # Create branch and checkout in worktree
-                result = subprocess.run(
+                checkout = subprocess.run(
                     ["git", "checkout", "-B", branch_name], capture_output=True, text=True
                 )
-                if result.returncode != 0:
-                    error(f"git checkout -B failed: {result.stderr}")
+                if checkout.returncode != 0:
+                    error(f"git checkout -B failed: {checkout.stderr}")
                     sys.exit(1)
                 success(f"Checked out branch {branch_name}")
             else:
                 # Normal mode: checkout branch
-                branch_name = create_or_get_branch(ticket_id, title, description)
+                branch_name = create_or_get_branch(ticket_id, title, description)  # type: ignore[assignment]
                 if not branch_name:
                     error("Failed to create/get branch")
                     sys.exit(1)
@@ -610,7 +610,7 @@ def main() -> None:
         # 3. Fetch or initialize state
         state_iteration = 0
         comment_id: Optional[str] = None
-        plan_steps: list[dict] = []
+        plan_steps = []
         current_step: Optional[int] = None
         log_entries: list[str] = []
         last_test_error: Optional[str] = None  # Track test errors between iterations
@@ -644,10 +644,10 @@ def main() -> None:
                 warn(f"Previous review issues: {last_review_issues[:80]}...")
 
         # 4. Run planning phase if needed
-        assumptions: list[Assumption] = []  # Current iteration (cleared after commit)
-        all_assumptions: list[Assumption] = []  # Accumulated for Linear comment
+        assumptions = []
+        all_assumptions = []
         prior_assumptions: Optional[list[Assumption]] = None
-        exploration: Optional[ExplorationFindings] = None  # Exploration findings for work context
+        exploration = None
         if not config.skip_plan and not plan_steps and not config.dry_run:
             while True:
                 plan_steps, assumptions, exploration = run_planning_phase(

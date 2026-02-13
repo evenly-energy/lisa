@@ -53,7 +53,7 @@ def _load_tokens() -> Optional[dict]:
     if not TOKEN_FILE.exists():
         return None
     try:
-        return json.loads(TOKEN_FILE.read_text())
+        return json.loads(TOKEN_FILE.read_text())  # type: ignore[no-any-return]
     except (json.JSONDecodeError, OSError):
         return None
 
@@ -79,7 +79,7 @@ def _exchange_code(code: str, verifier: str) -> Optional[dict]:
         with urllib.request.urlopen(
             req, timeout=30
         ) as resp:  # nosemgrep: dynamic-urllib-use-detected
-            return json.loads(resp.read())
+            return json.loads(resp.read())  # type: ignore[no-any-return]
     except (urllib.error.URLError, json.JSONDecodeError) as e:
         print(f"Token exchange failed: {e}")
         return None
@@ -104,7 +104,7 @@ def _refresh_access_token(refresh_token: str) -> Optional[dict]:
         with urllib.request.urlopen(
             req, timeout=30
         ) as resp:  # nosemgrep: dynamic-urllib-use-detected
-            return json.loads(resp.read())
+            return json.loads(resp.read())  # type: ignore[no-any-return]
     except (urllib.error.URLError, json.JSONDecodeError):
         return None
 
@@ -224,7 +224,7 @@ def get_token() -> Optional[str]:
 
     expires_at = tokens.get("expires_at", 0)
     if time.time() < expires_at - REFRESH_BUFFER:
-        return tokens["access_token"]
+        return tokens["access_token"]  # type: ignore[no-any-return]
 
     # Token expired or expiring soon — try refresh
     refresh = tokens.get("refresh_token")
@@ -243,7 +243,7 @@ def get_token() -> Optional[str]:
             "expires_at": time.time() + new_data.get("expires_in", 36000),
         }
     )
-    return new_data["access_token"]
+    return new_data["access_token"]  # type: ignore[no-any-return]
 
 
 def clear_tokens() -> None:

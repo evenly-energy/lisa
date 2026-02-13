@@ -109,6 +109,4 @@ class TestWorkClaude:
     def test_default_mode(self, mocker, reset_token_tracker):
         mock = mocker.patch("lisa.clients.claude.claude", return_value="result")
         work_claude("prompt", "sonnet")
-        mock.assert_called_once_with(
-            "prompt", model="sonnet", effort=None, json_schema=None
-        )
+        mock.assert_called_once_with("prompt", model="sonnet", effort=None, json_schema=None)

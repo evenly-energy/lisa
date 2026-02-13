@@ -1,0 +1,33 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.15.0
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-PyYAML]
+        pass_filenames: false
+        args: [src/]
+
+  - repo: local
+    hooks:
+      - id: coverage-badge
+        name: coverage badge
+        entry: python scripts/coverage_badge.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

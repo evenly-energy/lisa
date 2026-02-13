@@ -20,7 +20,7 @@ def get_fallback_tools() -> str:
         from lisa.config.settings import get_config
 
         config = get_config()
-        return config.get("fallback_tools", DEFAULT_FALLBACK_TOOLS).strip()
+        return config.get("fallback_tools", DEFAULT_FALLBACK_TOOLS).strip()  # type: ignore[no-any-return]
     except Exception:
         return DEFAULT_FALLBACK_TOOLS
 
@@ -105,7 +105,7 @@ def claude(
 
                 # Return result field (text output)
                 if "result" in wrapper:
-                    return wrapper["result"]
+                    return wrapper["result"]  # type: ignore[no-any-return]
         except json.JSONDecodeError:
             warn("JSON output extraction failed, using raw output")
 
