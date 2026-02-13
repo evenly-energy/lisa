@@ -210,6 +210,7 @@ tests:
   - name: Backend tests
     run: ./gradlew test
     paths: ["**/*.kt", "**/*.java"]
+    filter: '--tests "*{test}"'
   - name: Frontend tests
     run: npm test
     paths: ["frontend/**"]
@@ -222,11 +223,6 @@ format:
 coverage:
   run: ./gradlew koverVerify
   paths: ["**/*.kt"]
-
-test_retry:
-  templates:
-    "./gradlew test": "./gradlew test {test_filters}"
-  filter_format: '--tests "*{test_name}"'
 
 fallback_tools: >-
   Read Edit Write Grep Glob Skill

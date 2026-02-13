@@ -165,11 +165,6 @@ def run_test_phase(
     failure: Optional[TestFailure] = None
     ran_commands = []
 
-    # Get test filter config
-    test_retry = cfg.get("test_retry", {})
-    filter_templates = test_retry.get("templates", {})
-    filter_format = test_retry.get("filter_format", '--tests "*{test_name}"')
-
     for cmd in commands:
         if not should_run_command(cmd, changed):
             continue
@@ -177,14 +172,12 @@ def run_test_phase(
         cmd_name = cmd["name"]
         run_cmd = cmd["run"]
 
-        # Optimization: on retry, only run failing tests if template exists
-        if failed_tests:
-            for base_cmd, template in filter_templates.items():
-                if base_cmd in run_cmd:
-                    test_filters = " ".join(filter_format.format(test_name=t) for t in failed_tests)
-                    run_cmd = template.format(test_filters=test_filters)
-                    cmd_name = f"{cmd_name} ({len(failed_tests)} failing)"
-                    break
+        # On retry, append filter for failing tests if command supports it
+        cmd_filter = cmd.get("filter")
+        if failed_tests and cmd_filter:
+            filters = " ".join(cmd_filter.format(test=t) for t in failed_tests)
+            run_cmd = f"{run_cmd} {filters}"
+            cmd_name = f"{cmd_name} ({len(failed_tests)} failing)"
 
         ran_commands.append(cmd_name)
         timer.set_label(f"Running: {cmd_name}...")

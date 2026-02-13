@@ -6,6 +6,7 @@ tests:
   - name: "Backend tests"
     run: "./gradlew test"
     paths: ["**/*.kt", "**/*.java"]
+    filter: '--tests "*{test}"'
   - name: "Backend lint"
     run: "./gradlew ktlintFormat && ./gradlew ktlintCheck"
     paths: ["**/*.kt"]
@@ -30,11 +31,6 @@ format:
 coverage:
   run: "./gradlew koverVerify"
   paths: ["**/*.kt", "**/*.java"]
-
-test_retry:
-  templates:
-    "./gradlew test": "./gradlew test {test_filters}"
-  filter_format: '--tests "*{test_name}"'
 
 fallback_tools: >-
   Read Edit Write Grep Glob Skill
