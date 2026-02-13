@@ -10,7 +10,7 @@ from lisa.config.prompts import get_prompts
 from lisa.config.schemas import get_schemas
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import RunConfig
-from lisa.phases.constants import TURNS_REVIEW, calc_turns
+from lisa.phases.constants import EFFORT_REVIEW, resolve_effort
 from lisa.state.comment import find_state_comment, update_comment
 from lisa.ui.output import BLUE, GREEN, NC, RED, YELLOW, warn
 from lisa.ui.timer import LiveTimer
@@ -95,7 +95,9 @@ def run_conclusion_phase(
 
     # Format changed files
     changed_files = (
-        "\n".join(git_context["changed_files"]) if git_context["changed_files"] else "No files changed"
+        "\n".join(git_context["changed_files"])
+        if git_context["changed_files"]
+        else "No files changed"
     )
 
     prompt = prompts["conclusion_summary"]["template"].format(
@@ -116,7 +118,7 @@ def run_conclusion_phase(
         config.model,
         config.yolo,
         config.fallback_tools,
-        calc_turns(config.max_turns, TURNS_REVIEW),
+        resolve_effort(EFFORT_REVIEW, config.effort),
         json_schema=schemas["conclusion_summary"],
     )
     timer.stop(print_final=False)

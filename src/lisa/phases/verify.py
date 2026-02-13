@@ -16,11 +16,11 @@ from lisa.models.results import TestFailure, VerifyResult
 from lisa.models.state import RunConfig
 from lisa.phases.constants import (
     DEFAULT_TEST_TIMEOUT,
+    EFFORT_LIGHTWEIGHT,
+    EFFORT_REVIEW,
     MAX_FIX_ATTEMPTS,
     MAX_ISSUE_REPEATS,
-    TURNS_LIGHTWEIGHT,
-    TURNS_REVIEW,
-    calc_turns,
+    resolve_effort,
 )
 from lisa.ui.output import log, success_with_conclusion, warn, warn_with_conclusion
 from lisa.ui.timer import LiveTimer
@@ -242,7 +242,7 @@ def run_review_phase(
     model: str,
     yolo: bool,
     fallback_tools: bool,
-    max_turns: Optional[int],
+    effort: Optional[str],
     lightweight: bool = False,
     assumptions: Optional[list[Assumption]] = None,
     debug: bool = False,
@@ -250,9 +250,9 @@ def run_review_phase(
     """Code review. Returns dict with approved, findings, summary.
 
     Args:
-        max_turns: Max turns for the review (use calc_turns with appropriate multiplier).
-        lightweight: If True, use haiku with fast sanity-check prompt (for loop iterations).
-                    If False, use configured model with full review prompt (for final review).
+        effort: Effort level for the review (use resolve_effort with appropriate constant).
+        lightweight: If True, use fast sanity-check prompt (for loop iterations).
+                    If False, use full review prompt (for final review).
         assumptions: List of assumptions to validate (only used in full review mode).
 
     Returns:
@@ -266,7 +266,7 @@ def run_review_phase(
 
     if lightweight:
         prompt = prompts["review_light"]["template"].format(task_title=task_title)
-        review_model = "haiku"
+        review_model = model
         timer_label = "Quick review..."
         schema_name = "review_light"
     else:
@@ -294,7 +294,7 @@ def run_review_phase(
     timer.start()
 
     output = work_claude(
-        prompt, review_model, yolo, fallback_tools, max_turns, json_schema=schemas[schema_name]
+        prompt, review_model, yolo, fallback_tools, effort, json_schema=schemas[schema_name]
     )
     debug_log(debug, "Review output", output)
 
@@ -337,20 +337,20 @@ def run_fix_phase(
     model: str,
     yolo: bool,
     fallback_tools: bool,
-    max_turns: Optional[int],
+    effort: Optional[str],
     fix_model: Optional[str] = None,
 ) -> None:
     """Fix issues from code review.
 
     Args:
-        max_turns: Max turns for the fix (use calc_turns with appropriate multiplier).
+        effort: Effort level for the fix (use resolve_effort with appropriate constant).
         fix_model: Override model for fixes. If None, uses `model` param.
     """
     prompts = get_prompts()
     prompt = prompts["fix"]["template"].format(issues=issues)
     use_model = fix_model or model
     with LiveTimer("Fixing...", total_start, print_final=False):
-        work_claude(prompt, use_model, yolo, fallback_tools, max_turns)
+        work_claude(prompt, use_model, yolo, fallback_tools, effort)
     log("Fixes applied")
 
 
@@ -362,14 +362,14 @@ def run_test_fix_phase(
     model: str,
     yolo: bool,
     fallback_tools: bool,
-    max_turns: Optional[int],
+    effort: Optional[str],
 ) -> None:
     """Fix test/lint failures. Uses configured model for better reasoning on test failures.
 
     Args:
         task_description: Full task context for the fix agent.
         model: Model to use for fixes (from config).
-        max_turns: Max turns for the fix (use calc_turns with appropriate multiplier).
+        effort: Effort level for the fix (use resolve_effort with appropriate constant).
     """
     prompts = get_prompts()
 
@@ -388,7 +388,7 @@ def run_test_fix_phase(
         output=failure.output,
     )
     with LiveTimer(f"Fixing {failure.command_name}...", total_start, print_final=False):
-        work_claude(prompt, model, yolo, fallback_tools, max_turns)
+        work_claude(prompt, model, yolo, fallback_tools, effort)
     log(f"Test fix applied for {failure.command_name}")
 
 
@@ -400,7 +400,7 @@ def run_completion_check(
     model: str,
     yolo: bool,
     fallback_tools: bool,
-    max_turns: int,
+    effort: str,
     debug: bool = False,
 ) -> dict:
     """Check if a step's described goal was actually achieved in the code changes.
@@ -433,8 +433,6 @@ def run_completion_check(
         files_context=files_context,
     )
 
-    lightweight_turns = calc_turns(max_turns, TURNS_LIGHTWEIGHT)
-
     timer = LiveTimer("Completion check...", total_start, print_final=False)
     timer.start()
     output = work_claude(
@@ -442,7 +440,7 @@ def run_completion_check(
         model,
         yolo,
         fallback_tools,
-        lightweight_turns,
+        resolve_effort(EFFORT_LIGHTWEIGHT, effort),
         json_schema=schemas["completion_check"],
     )
     timer.stop(print_final=False)
@@ -472,7 +470,7 @@ def verify_step(
     model: str,
     yolo: bool,
     fallback_tools: bool,
-    max_turns: int,
+    effort: str,
     step_id: int = 0,
     step_files: Optional[list[dict]] = None,
     debug: bool = False,
@@ -488,7 +486,6 @@ def verify_step(
             model,
             yolo,
             fallback_tools,
-            max_turns,
             debug,
         )
         if not completion.get("complete", True):
@@ -497,7 +494,7 @@ def verify_step(
             )
 
     # Calculate turn limits for this verification cycle
-    lightweight_turns = calc_turns(max_turns, TURNS_LIGHTWEIGHT)
+    lightweight_effort = resolve_effort(EFFORT_LIGHTWEIGHT, effort)
 
     # Test phase with fix loop
     test_failure = run_test_phase(step_desc, total_start, model, yolo, fallback_tools, debug=debug)
@@ -514,7 +511,7 @@ def verify_step(
             model,
             yolo,
             fallback_tools,
-            lightweight_turns,
+            lightweight_effort,
         )
         test_failure = run_test_phase(
             step_desc,
@@ -530,11 +527,11 @@ def verify_step(
     if test_failure is not None:
         return VerifyResult(passed=False, test_errors=[test_failure.summary])
 
-    # Review + fix loop (lightweight haiku review, haiku fixes, early exit on repeated issues)
+    # Review + fix loop (lightweight review, early exit on repeated issues)
     review_issues: list[str] = []
     issue_counts: dict[str, int] = {}
     for attempt in range(MAX_FIX_ATTEMPTS):
-        # Use lightweight (haiku) review in loop - fast sanity check
+        # Use lightweight review in loop - fast sanity check
         review_result = run_review_phase(
             step_desc,
             task_description,
@@ -542,7 +539,7 @@ def verify_step(
             model,
             yolo,
             fallback_tools,
-            lightweight_turns,
+            lightweight_effort,
             lightweight=True,
             debug=debug,
         )
@@ -562,18 +559,17 @@ def verify_step(
             )
         review_issues.append(issue)
 
-        # Use haiku for fixes in loop (usually simple fixes)
+        # Fix review issues in loop
         run_fix_phase(
             review_result["summary"],
             total_start,
             model,
             yolo,
             fallback_tools,
-            lightweight_turns,
-            fix_model="haiku",
+            lightweight_effort,
         )
 
-        # Re-test after fix (haiku for test fixes)
+        # Re-test after fix
         test_failure = run_test_phase(
             step_desc, total_start, model, yolo, fallback_tools, debug=debug
         )
@@ -589,7 +585,7 @@ def verify_step(
                 model,
                 yolo,
                 fallback_tools,
-                lightweight_turns,
+                lightweight_effort,
             )
             test_failure = run_test_phase(
                 step_desc,
@@ -670,6 +666,6 @@ def run_coverage_fix_phase(
         config.model,
         config.yolo,
         config.fallback_tools,
-        calc_turns(config.max_turns, TURNS_REVIEW),
+        resolve_effort(EFFORT_REVIEW, config.effort),
     )
     timer.stop(print_final=False)

@@ -30,7 +30,7 @@ from lisa.git.commit import get_changed_files, get_diff_summary
 from lisa.git.worktree import create_session_worktree, remove_worktree
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import RunConfig, WorkContext
-from lisa.phases.constants import TURNS_QUICK, calc_turns
+from lisa.phases.constants import EFFORT_QUICK, resolve_effort
 from lisa.phases.planning import run_planning_phase, sort_by_dependencies
 from lisa.phases.verify import run_review_phase
 from lisa.phases.work import process_ticket_work
@@ -55,7 +55,6 @@ from lisa.utils.debug import DEBUG_LOG
 from lisa.utils.formatting import fmt_cost, fmt_duration, fmt_tokens
 
 # Defaults
-DEFAULT_MAX_TURNS = 100
 DEFAULT_MAX_ITERATIONS = 30
 
 
@@ -67,7 +66,7 @@ def parse_args() -> RunConfig:
 Examples:
   %(prog)s ENG-123                    Run with project permissions
   %(prog)s ENG-123 -n 50              Run 50 iterations
-  %(prog)s ENG-123 --max-turns 15     Limit to 15 turns per iteration (prevent context overflow)
+  %(prog)s ENG-123 --effort medium     Cap effort level (reduce work per session)
   %(prog)s ENG-123 --skip-plan        Skip planning, use subtasks directly
   %(prog)s ENG-123 --push             Enable push after each commit
   %(prog)s ENG-123 --dry-run          Show ticket status without executing
@@ -81,7 +80,7 @@ How it works:
   3. Loads state from comment on ticket (🤖 lisa · {branch})
   4. PLANNING PHASE: Claude analyzes ticket and creates granular step checklist
   5. Picks the first incomplete step from the plan
-  6. Runs Claude Code to work on that step (limited by --max-turns)
+  6. Runs Claude Code to work on that step (effort controlled by --effort)
   7. When step done: runs tests, code review, fix loop (unless --skip-verify)
   8. Commits with: feat(lisa): [ENG-456] step N - description
   9. Updates state comment on ticket (checkboxes for each step)
@@ -94,9 +93,9 @@ Planning phase:
   - Use --skip-plan to bypass and use subtasks directly
 
 Context management:
-  - --max-turns N limits API calls per Claude session (default: 100)
-  - Prevents context overflow during long iterations
-  - If session hits limit, continues next iteration from git state
+  - --effort low/medium/high controls Claude's work intensity (default: high)
+  - Lower effort = faster but less thorough sessions
+  - Each phase has a default effort that gets capped by the user flag
 
 Verification (after step done):
   1. TEST: runs configured test commands (see prompts.yaml)
@@ -201,11 +200,10 @@ Tips:
         help="Skip test and review phases (faster but less safe)",
     )
     parser.add_argument(
-        "--max-turns",
-        type=int,
-        default=DEFAULT_MAX_TURNS,
-        metavar="N",
-        help=f"Max turns per Claude session (default: {DEFAULT_MAX_TURNS}, -1 for unlimited)",
+        "--effort",
+        choices=["low", "medium", "high"],
+        default="high",
+        help="Effort level cap for Claude sessions (default: high)",
     )
     parser.add_argument(
         "--skip-plan",
@@ -249,7 +247,7 @@ Tips:
     return RunConfig(
         ticket_ids=args.tickets,
         max_iterations=args.max_iterations,
-        max_turns=args.max_turns,
+        effort=args.effort,
         model=args.model,
         dry_run=args.dry_run,
         push=args.push,
@@ -282,10 +280,7 @@ def log_config(config: RunConfig) -> None:
         log(f"Running {len(config.ticket_ids)} tickets in series: {YELLOW}{ticket_chain}{NC}")
     else:
         log(f"Starting Lisa for {YELLOW}{config.ticket_ids[0]}{NC}")
-    turns_display = "unlimited" if config.max_turns == -1 else str(config.max_turns)
-    log(
-        f"Max iterations: {config.max_iterations}, max turns: {turns_display}, model: {config.model}"
-    )
+    log(f"Max iterations: {config.max_iterations}, effort: {config.effort}, model: {config.model}")
 
     if config.yolo:
         warn("YOLO MODE - all permission checks disabled")
@@ -449,7 +444,7 @@ def main() -> None:
                 config.model,
                 config.yolo,
                 config.fallback_tools,
-                calc_turns(config.max_turns, TURNS_QUICK),
+                resolve_effort(EFFORT_QUICK, config.effort),
                 lightweight=False,
                 assumptions=assumptions if assumptions else None,
                 debug=config.debug,

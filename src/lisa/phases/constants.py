@@ -2,12 +2,15 @@
 
 from typing import Optional
 
-# Turn multipliers - relative to max_turns base
-TURNS_LIGHTWEIGHT = 0.4  # 40 at 100 (quick reviews, loop fixes - need room to reason)
-TURNS_QUICK = 0.25  # 25 at 100 (re-review phases)
-TURNS_REVIEW = 0.50  # 50 at 100 (standard review/fix)
-TURNS_PLANNING = 1.0  # 100 at 100 (planning phase - exploration needs room)
-TURNS_WORK = 1.0  # 100 at 100 (main work)
+# Effort levels for Claude CLI --effort flag
+EFFORT_WORK = "high"  # main implementation
+EFFORT_PLANNING = "high"  # planning phase - exploration needs room
+EFFORT_REVIEW = "medium"  # standard review/fix, conclusion, coverage
+EFFORT_LIGHTWEIGHT = "low"  # completion checks, loop fixes
+EFFORT_QUICK = "low"  # final review, review-only mode
+
+# Ranking for resolve_effort (lower = less effort)
+EFFORT_RANK = {"low": 0, "medium": 1, "high": 2}
 
 # Limits
 MAX_FIX_ATTEMPTS = 4  # Complex issues often need 3-5 attempts
@@ -15,9 +18,10 @@ MAX_ISSUE_REPEATS = 3  # Only exit after same issue repeats this many times
 DEFAULT_TEST_TIMEOUT = 600
 
 
-def calc_turns(base: int, multiplier: float) -> Optional[int]:
-    """Calculate turns from base. Returns None if base is -1 (unlimited)."""
-    if base == -1:
-        return None
-    assert base >= 0, f"base must be >= -1, got {base}"
-    return max(1, int(base * multiplier))
+def resolve_effort(phase: str, user_cap: Optional[str] = None) -> str:
+    """Return the lower of phase default and user cap."""
+    if user_cap is None:
+        return phase
+    if EFFORT_RANK.get(user_cap, 2) < EFFORT_RANK.get(phase, 2):
+        return user_cap
+    return phase

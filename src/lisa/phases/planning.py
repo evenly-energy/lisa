@@ -8,7 +8,7 @@ from lisa.config.prompts import get_prompts
 from lisa.config.schemas import get_schemas
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import RunConfig
-from lisa.phases.constants import TURNS_PLANNING, calc_turns
+from lisa.phases.constants import EFFORT_PLANNING, resolve_effort
 from lisa.ui.output import log, warn
 from lisa.ui.timer import LiveTimer
 from lisa.utils.debug import debug_log
@@ -97,16 +97,14 @@ def run_planning_phase(
             prior_context += "\n"
         prompt += prior_context
 
-    timer = LiveTimer(
-        "Re-planning..." if prior_assumptions else "Planning...", total_start
-    )
+    timer = LiveTimer("Re-planning..." if prior_assumptions else "Planning...", total_start)
     timer.start()
     output = work_claude(
         prompt,
         model,
         yolo,
         fallback_tools,
-        calc_turns(config.max_turns, TURNS_PLANNING),
+        resolve_effort(EFFORT_PLANNING, config.effort),
         json_schema=schemas["planning"],
     )
     timer.stop(print_final=False)

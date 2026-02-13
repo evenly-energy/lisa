@@ -10,8 +10,7 @@ from lisa.ui.output import error, warn
 # Default fallback tools when project settings not available
 # This is overridden by config.fallback_tools in prompts.yaml
 DEFAULT_FALLBACK_TOOLS = (
-    "Read Edit Write Grep Glob Skill "
-    "Bash(git:*) Bash(cd:*) Bash(ls:*) Bash(mkdir:*) Bash(rm:*)"
+    "Read Edit Write Grep Glob Skill Bash(git:*) Bash(cd:*) Bash(ls:*) Bash(mkdir:*) Bash(rm:*)"
 )
 
 
@@ -19,6 +18,7 @@ def get_fallback_tools() -> str:
     """Get fallback tools from config or use default."""
     try:
         from lisa.config.prompts import get_prompts
+
         prompts = get_prompts()
         config = prompts.get("config", {})
         return config.get("fallback_tools", DEFAULT_FALLBACK_TOOLS).strip()
@@ -51,7 +51,7 @@ def claude(
     allowed_tools: Optional[str] = None,
     yolo: bool = False,
     verbose: bool = False,
-    max_turns: Optional[int] = None,
+    effort: Optional[str] = None,
     json_schema: Optional[dict] = None,
 ) -> str:
     """Run claude CLI and return output.
@@ -64,8 +64,8 @@ def claude(
         cmd.extend(["--allowedTools", allowed_tools])
     if yolo:
         cmd.append("--dangerously-skip-permissions")
-    if max_turns:
-        cmd.extend(["--max-turns", str(max_turns)])
+    if effort:
+        cmd.extend(["--effort", effort])
     if json_schema:
         cmd.extend(["--json-schema", json.dumps(json_schema)])
 
@@ -118,21 +118,19 @@ def work_claude(
     model: str,
     yolo: bool = False,
     fallback_tools: bool = False,
-    max_turns: Optional[int] = None,
+    effort: Optional[str] = None,
     json_schema: Optional[dict] = None,
 ) -> str:
     """Run claude for coding work."""
     if yolo:
-        return claude(
-            prompt, model=model, yolo=True, max_turns=max_turns, json_schema=json_schema
-        )
+        return claude(prompt, model=model, yolo=True, effort=effort, json_schema=json_schema)
     if fallback_tools:
         return claude(
             prompt,
             model=model,
             allowed_tools=get_fallback_tools(),
-            max_turns=max_turns,
+            effort=effort,
             json_schema=json_schema,
         )
     # Default: rely on project .claude/settings.json permissions
-    return claude(prompt, model=model, max_turns=max_turns, json_schema=json_schema)
+    return claude(prompt, model=model, effort=effort, json_schema=json_schema)

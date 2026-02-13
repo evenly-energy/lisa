@@ -19,7 +19,7 @@ from lisa.phases.conclusion import (
     run_conclusion_phase,
     save_conclusion_to_linear,
 )
-from lisa.phases.constants import MAX_FIX_ATTEMPTS, TURNS_QUICK, TURNS_WORK, calc_turns
+from lisa.phases.constants import EFFORT_QUICK, EFFORT_WORK, MAX_FIX_ATTEMPTS, resolve_effort
 from lisa.phases.verify import (
     detect_file_categories,
     run_coverage_fix_phase,
@@ -291,7 +291,7 @@ Address these review issues before marking the step as done.
         ctx.config.model,
         ctx.config.yolo,
         ctx.config.fallback_tools,
-        calc_turns(ctx.config.max_turns, TURNS_WORK),
+        resolve_effort(EFFORT_WORK, ctx.config.effort),
         json_schema=schemas["work"],
     )
     ctx.iter_state["step_elapsed"] = timer.get_elapsed()
@@ -429,7 +429,7 @@ def handle_verify_step(ctx: WorkContext) -> WorkState:
         ctx.config.model,
         ctx.config.yolo,
         ctx.config.fallback_tools,
-        ctx.config.max_turns,
+        ctx.config.effort,
         step_id=ctx.current_step,
         step_files=step_files,
         debug=ctx.config.debug,
@@ -585,7 +585,7 @@ def handle_all_done(ctx: WorkContext) -> None:
             ctx.config.model,
             ctx.config.yolo,
             ctx.config.fallback_tools,
-            calc_turns(ctx.config.max_turns, TURNS_QUICK),
+            resolve_effort(EFFORT_QUICK, ctx.config.effort),
             lightweight=False,
             assumptions=ctx.all_assumptions,
             debug=ctx.config.debug,

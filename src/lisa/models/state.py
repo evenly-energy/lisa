@@ -37,7 +37,7 @@ class RunConfig:
 
     ticket_ids: list[str]
     max_iterations: int
-    max_turns: int
+    effort: str
     model: str
     dry_run: bool = False
     push: bool = False
