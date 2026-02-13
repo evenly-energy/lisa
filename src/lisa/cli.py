@@ -128,8 +128,9 @@ Safety:
   - No push by default (use --push to enable)
 
 Linear API:
-  - LINEAR_API_KEY env var is REQUIRED
-  - Get key from: Linear Settings → Security & access → Personal API keys
+  - Run `lisa login` for browser-based OAuth (recommended)
+  - Or set LINEAR_API_KEY env var for API key auth
+  - Run `lisa logout` to clear stored OAuth tokens
 
 Completion signals (Claude outputs JSON with structured schema):
   {"step_done": N, ...}              Step N complete, move to next step
@@ -273,11 +274,33 @@ Tips:
 
 
 def validate_env() -> None:
-    """Validate required environment variables. Exits on failure."""
-    if not os.environ.get("LINEAR_API_KEY"):
-        error("LINEAR_API_KEY environment variable is required")
-        error("Get your key from: Linear Settings → Security & access → Personal API keys")
+    """Validate Linear authentication. Supports env var or OAuth token."""
+    if os.environ.get("LINEAR_API_KEY"):
+        return
+
+    from lisa.auth import get_token, run_login_flow
+
+    if get_token():
+        return
+
+    # No auth available — prompt user
+    log("No Linear authentication found.")
+    log("Options: set LINEAR_API_KEY env var or login via browser.")
+    try:
+        answer = input("Login via browser now? [Y/n] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
         sys.exit(1)
+
+    if answer in ("", "y", "yes"):
+        if run_login_flow():
+            success("Logged in to Linear successfully.")
+            return
+        else:
+            error("Login failed.")
+    else:
+        error("Linear authentication required. Run `lisa login` or set LINEAR_API_KEY.")
+    sys.exit(1)
 
 
 def log_config(config: RunConfig) -> None:
@@ -378,6 +401,24 @@ def print_review_report(result: dict) -> None:
 
 
 def main() -> None:
+    # Handle login/logout before argparse (which expects positional ticket IDs)
+    if len(sys.argv) > 1 and sys.argv[1] == "login":
+        from lisa.auth import run_login_flow
+
+        if run_login_flow():
+            print("Logged in to Linear successfully.")
+        else:
+            print("Login failed.")
+            sys.exit(1)
+        sys.exit(0)
+
+    if len(sys.argv) > 1 and sys.argv[1] == "logout":
+        from lisa.auth import clear_tokens
+
+        clear_tokens()
+        print("Logged out. Stored tokens cleared.")
+        sys.exit(0)
+
     config = parse_args()
     validate_env()
     log_config(config)
