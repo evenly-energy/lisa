@@ -316,10 +316,15 @@ State is resumable—re-running continues from where it left off.
 # Dev install
 uv pip install -e ".[dev]"
 
+# Run tests
+pytest tests/
+
 # Lint
 ruff check src/
 ruff format src/
 ```
+
+Tests are pure unit tests with mocked subprocess/dependencies — no external services or CLI required.
 
 See `CLAUDE.md` for architecture patterns and implementation details.
 
