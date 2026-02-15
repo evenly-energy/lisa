@@ -530,6 +530,7 @@ def handle_commit_changes(ctx: WorkContext) -> WorkState:
             model=ctx.config.model,
             yolo=ctx.config.yolo,
             fallback_tools=ctx.config.fallback_tools,
+            spice=ctx.config.spice,
         ):
             warn("Commit failed - changes not committed")
         elif not ctx.tests_passed:
@@ -619,6 +620,7 @@ def handle_all_done(ctx: WorkContext) -> None:
             model=ctx.config.model,
             yolo=ctx.config.yolo,
             fallback_tools=ctx.config.fallback_tools,
+            spice=ctx.config.spice,
         ):
             warn("Final commit failed - changes not committed")
 
@@ -662,6 +664,7 @@ def handle_all_done(ctx: WorkContext) -> None:
                     model=ctx.config.model,
                     yolo=ctx.config.yolo,
                     fallback_tools=ctx.config.fallback_tools,
+                    spice=ctx.config.spice,
                 )
             coverage_passed, coverage_error = run_coverage_gate(ctx.total_start, ctx.config.debug)
 

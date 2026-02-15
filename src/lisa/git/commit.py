@@ -96,6 +96,7 @@ def git_commit(
     model: Optional[str] = None,
     yolo: bool = False,
     fallback_tools: bool = False,
+    spice: bool = False,
 ) -> bool:
     """Commit changes, optionally push. Returns True on success.
 
@@ -208,11 +209,20 @@ def git_commit(
     success_with_conclusion(f"Committed ({commit_ticket_id})", short_sha, raw=True)
 
     if push:
-        result = subprocess.run(["git", "push"], capture_output=True, text=True)
-        if result.returncode != 0:
-            error(f"git push failed: {result.stderr}")
-            return False
-        from lisa.ui.output import success
+        if spice:
+            result = subprocess.run(["gs", "branch", "submit"], capture_output=True, text=True)
+            if result.returncode != 0:
+                error(f"gs branch submit failed: {result.stderr}")
+                return False
+            from lisa.ui.output import success
 
-        success("Pushed to remote")
+            success("Submitted via git-spice")
+        else:
+            result = subprocess.run(["git", "push"], capture_output=True, text=True)
+            if result.returncode != 0:
+                error(f"git push failed: {result.stderr}")
+                return False
+            from lisa.ui.output import success
+
+            success("Pushed to remote")
     return True

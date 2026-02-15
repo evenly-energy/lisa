@@ -107,7 +107,9 @@ def determine_branch_name(ticket_id: str, title: str, description: str) -> tuple
     return branch_name, False
 
 
-def create_or_get_branch(ticket_id: str, title: str, description: str) -> Optional[str]:
+def create_or_get_branch(
+    ticket_id: str, title: str, description: str, spice: bool = False
+) -> Optional[str]:
     """Determine branch for this ticket. Returns branch name or None on failure.
 
     Logic:
@@ -121,6 +123,9 @@ def create_or_get_branch(ticket_id: str, title: str, description: str) -> Option
     current = get_current_branch()
     if current.startswith(f"{prefix}-"):
         log(f"Already on ticket branch {current}")
+        if spice:
+            # Ensure branch is tracked by git-spice (idempotent)
+            subprocess.run(["gs", "branch", "track"], capture_output=True, text=True)
         return current
 
     # Find existing branches for this ticket
@@ -140,10 +145,20 @@ def create_or_get_branch(ticket_id: str, title: str, description: str) -> Option
         log(f"Found {len(existing)} existing branches, creating {branch_name}")
 
     # Create the branch
-    result = subprocess.run(["git", "checkout", "-b", branch_name], capture_output=True, text=True)
-    if result.returncode != 0:
-        error(f"git checkout -b failed: {result.stderr}")
-        return None
-
-    success(f"Created branch {branch_name}")
+    if spice:
+        result = subprocess.run(
+            ["gs", "branch", "create", branch_name], capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            error(f"gs branch create failed: {result.stderr}")
+            return None
+        success(f"Created spice branch {branch_name}")
+    else:
+        result = subprocess.run(
+            ["git", "checkout", "-b", branch_name], capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            error(f"git checkout -b failed: {result.stderr}")
+            return None
+        success(f"Created branch {branch_name}")
     return branch_name

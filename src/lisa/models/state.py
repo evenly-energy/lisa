@@ -53,6 +53,7 @@ class RunConfig:
     conclusion: bool = False
     worktree: bool = False
     preflight: bool = False
+    spice: bool = False
 
 
 @dataclass

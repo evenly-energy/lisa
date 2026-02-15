@@ -250,6 +250,12 @@ Tips:
         action="store_true",
         help="Run all tests/linting before starting to verify clean codebase state",
     )
+    parser.add_argument(
+        "-s",
+        "--spice",
+        action="store_true",
+        help="Use git-spice for stacked branches (requires gs)",
+    )
     args = parser.parse_args()
     return RunConfig(
         ticket_ids=args.tickets,
@@ -270,6 +276,7 @@ Tips:
         conclusion=args.conclusion,
         worktree=args.worktree,
         preflight=args.preflight,
+        spice=args.spice,
     )
 
 
@@ -337,6 +344,8 @@ def log_config(config: RunConfig) -> None:
         log(f"Debug logging to {DEBUG_LOG}")
     if config.preflight:
         log("Preflight checks enabled")
+    if config.spice:
+        log("git-spice stacking enabled")
     if config.dry_run:
         log(f"{YELLOW}DRY RUN MODE - no changes will be made{NC}")
     if not config.push:
@@ -433,6 +442,13 @@ def main() -> None:
     config = parse_args()
     validate_env()
     log_config(config)
+
+    if config.spice:
+        import shutil
+
+        if not shutil.which("gs"):
+            error("--spice requires git-spice (gs). Install: brew install git-spice")
+            sys.exit(1)
 
     total_start = time.time()
 
@@ -593,16 +609,27 @@ def main() -> None:
                     log(f"Creating branch {branch_name}")
 
                 # Create branch and checkout in worktree
-                checkout = subprocess.run(
-                    ["git", "checkout", "-B", branch_name], capture_output=True, text=True
-                )
-                if checkout.returncode != 0:
-                    error(f"git checkout -B failed: {checkout.stderr}")
-                    sys.exit(1)
-                success(f"Checked out branch {branch_name}")
+                if config.spice:
+                    checkout = subprocess.run(
+                        ["gs", "branch", "create", branch_name], capture_output=True, text=True
+                    )
+                    if checkout.returncode != 0:
+                        error(f"gs branch create failed: {checkout.stderr}")
+                        sys.exit(1)
+                    success(f"Created spice branch {branch_name}")
+                else:
+                    checkout = subprocess.run(
+                        ["git", "checkout", "-B", branch_name], capture_output=True, text=True
+                    )
+                    if checkout.returncode != 0:
+                        error(f"git checkout -B failed: {checkout.stderr}")
+                        sys.exit(1)
+                    success(f"Checked out branch {branch_name}")
             else:
                 # Normal mode: checkout branch
-                branch_name = create_or_get_branch(ticket_id, title, description)  # type: ignore[assignment]
+                branch_name = create_or_get_branch(
+                    ticket_id, title, description, spice=config.spice
+                )  # type: ignore[assignment]
                 if not branch_name:
                     error("Failed to create/get branch")
                     sys.exit(1)
@@ -772,6 +799,15 @@ def main() -> None:
 
         if not ticket_success:
             failed_tickets.append(ticket_id)
+
+    # Submit entire stack if spice + push + multi-ticket + no failures
+    if config.spice and config.push and num_tickets > 1 and not failed_tickets:
+        log("Submitting stack via git-spice...")
+        stack_result = subprocess.run(["gs", "stack", "submit"], capture_output=True, text=True)
+        if stack_result.returncode != 0:
+            error(f"gs stack submit failed: {stack_result.stderr}")
+        else:
+            success("Stack submitted")
 
     # Report results
     if failed_tickets:
