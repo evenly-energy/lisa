@@ -50,20 +50,20 @@ def should_run_command(cmd: dict, changed_files: list[str]) -> bool:
 
 
 def run_preflight() -> bool:
-    """Run all test and format commands unconditionally. Returns True if all pass."""
+    """Run test commands marked for preflight. Returns True if all pass."""
     config = get_config()
 
     test_commands = config.get("tests", [])
-    format_commands = config.get("format", [])
-    all_commands = [(c, DEFAULT_TEST_TIMEOUT) for c in test_commands] + [
-        (c, 120) for c in format_commands
+    # Filter test commands by preflight property (default: True)
+    preflight_commands = [
+        (c, DEFAULT_TEST_TIMEOUT) for c in test_commands if c.get("preflight", True)
     ]
 
-    if not all_commands:
+    if not preflight_commands:
         log("Preflight: no commands configured")
         return True
 
-    for cmd, timeout in all_commands:
+    for cmd, timeout in preflight_commands:
         cmd_name = cmd["name"]
         run_cmd = cmd["run"]
         log(f"Preflight: {cmd_name}...")

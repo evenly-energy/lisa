@@ -2,6 +2,11 @@
 # Override per-project: .lisa/config.yaml | globally: ~/.config/lisa/config.yaml
 # Only specify keys you want to change — deep merge keeps the rest
 
+# Test commands: each command supports optional properties
+# - paths: glob patterns for path filtering
+# - filter: format template for test retries
+# - preflight: (bool, default: true) run in preflight validation
+#   Set to false to skip expensive commands before work starts
 tests:
   - name: "Backend tests"
     run: "./gradlew test"

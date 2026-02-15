@@ -47,6 +47,14 @@ Two config files with same layered override chain (defaults < `~/.config/lisa/` 
 - **prompts.yaml** — AI prompt templates (internal)
 - **config.yaml** — Stack config: test/format/coverage commands, fallback tools (user-facing)
 
+### Test Command Properties
+Commands in the `tests` section support optional properties:
+- **paths** (list[str]): Glob patterns for path filtering (e.g., `["**/*.kt"]`)
+- **filter** (str): Format template for test retries (e.g., `'--tests "*{test}"'`)
+- **preflight** (bool): Whether to run in preflight validation (default: `true`)
+  - Set to `false` to skip expensive commands (e.g., integration tests) in preflight
+  - Preflight only runs test commands; format commands run during commit phase
+
 ### Structured Output & Schemas
 Lisa uses JSON schemas to get predictable Claude responses. Defined in `schemas/default.yaml`:
 
