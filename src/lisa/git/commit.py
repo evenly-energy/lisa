@@ -210,7 +210,9 @@ def git_commit(
 
     if push:
         if spice:
-            result = subprocess.run(["gs", "branch", "submit"], capture_output=True, text=True)
+            result = subprocess.run(
+                ["gs", "branch", "submit", "--no-publish"], capture_output=True, text=True
+            )
             if result.returncode != 0:
                 error(f"gs branch submit failed: {result.stderr}")
                 return False

@@ -2,11 +2,12 @@
 
 import json
 import os
+import subprocess
 import sys
 import time
 from typing import Callable, Optional
 
-from lisa.clients.claude import token_tracker, work_claude
+from lisa.clients.claude import claude, token_tracker, work_claude
 from lisa.clients.linear import fetch_subtask_details
 from lisa.config.prompts import get_prompts
 from lisa.config.schemas import get_schemas
@@ -580,6 +581,66 @@ def handle_save_state(ctx: WorkContext) -> WorkState:
     return WorkState.SELECT_STEP  # Next iteration
 
 
+def _generate_pr_title(ticket_id: str, conclusion: dict) -> str:
+    """Ask haiku to generate a concise PR title from conclusion data."""
+    context = json.dumps(conclusion, indent=2)
+    prompt = f"""Summarize this implementation for a PR title.
+Max 50 chars. Be concise, no fluff.
+
+{context}
+
+Reply with ONLY the summary, nothing else."""
+    desc = claude(prompt, model="haiku", allowed_tools="").strip()
+    return f"feat(lisa): [{ticket_id}] {desc}"
+
+
+def _submit_spice_pr(ctx: WorkContext, conclusion: Optional[dict]) -> None:
+    """Create PR via git-spice with title/body from conclusion data."""
+    if conclusion and conclusion.get("purpose"):
+        title = _generate_pr_title(ctx.ticket_id, conclusion)
+
+        # Build body from conclusion fields
+        body_parts = [f"## Summary\n{conclusion.get('purpose', '')}"]
+        if conclusion.get("flow"):
+            body_parts.append(f"## Flow\n{conclusion['flow']}")
+        key_points = conclusion.get("key_review_points", [])
+        if key_points:
+            items = "\n".join(
+                f"- **{p.get('location', '?')}**: {p.get('what_it_does', '?')}" for p in key_points
+            )
+            body_parts.append(f"## Key Review Points\n{items}")
+        tests = conclusion.get("tests", {})
+        if tests:
+            lines = []
+            for t in tests.get("covered", []):
+                lines.append(f"- [x] {t}")
+            for t in tests.get("missing", []):
+                lines.append(f"- [ ] {t}")
+            if lines:
+                body_parts.append("## Tests\n" + "\n".join(lines))
+        body_parts.append(f"---\n[{ctx.ticket_id}]({ctx.issue_url})")
+        body = "\n\n".join(body_parts)
+
+        result = subprocess.run(
+            ["gs", "branch", "submit", "--title", title, "--body", body],
+            capture_output=True,
+            text=True,
+        )
+    else:
+        # No conclusion — use ticket title + fill from commits
+        title = f"feat(lisa): [{ctx.ticket_id}] {ctx.title[:60]}"
+        result = subprocess.run(
+            ["gs", "branch", "submit", "--title", title, "--fill"],
+            capture_output=True,
+            text=True,
+        )
+
+    if result.returncode != 0:
+        warn(f"gs branch submit (PR) failed: {result.stderr}")
+    else:
+        success("PR created via git-spice")
+
+
 def handle_all_done(ctx: WorkContext) -> None:
     """Final review, coverage gate, conclusion."""
     # Run final comprehensive review with configured model
@@ -672,6 +733,7 @@ def handle_all_done(ctx: WorkContext) -> None:
             warn("Coverage still below 80% after fixes - review manually")
 
     # Generate and display conclusion (review guide)
+    conclusion = None
     if ctx.branch_name:
         conclusion = run_conclusion_phase(
             ticket_id=ctx.ticket_id,
@@ -694,6 +756,10 @@ def handle_all_done(ctx: WorkContext) -> None:
                 success(f"Review guide saved to {link}")
             else:
                 warn("Failed to save review guide to Linear")
+
+    # Create PR via git-spice with conclusion data
+    if ctx.config.spice and ctx.config.push and ctx.branch_name:
+        _submit_spice_pr(ctx, conclusion)
 
     ticket_elapsed = fmt_duration(time.time() - ctx.total_start)
     ticket_tokens = fmt_tokens(token_tracker.total.total)
