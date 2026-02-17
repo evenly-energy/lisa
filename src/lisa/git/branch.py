@@ -17,6 +17,37 @@ def get_current_branch() -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def get_default_branch() -> str:
+    """Get the repository's default branch (main/master/trunk).
+
+    Uses origin/HEAD to determine the default branch.
+    Falls back to checking common branch names locally.
+    Returns empty string if no default branch found.
+    """
+    # Try to get the default branch from origin/HEAD
+    result = subprocess.run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        ref = result.stdout.strip()
+        if ref.startswith("refs/remotes/origin/"):
+            return ref[len("refs/remotes/origin/") :]
+
+    # Fallback: check if main or master exists locally
+    for candidate in ["main", "master", "trunk"]:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", candidate],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return candidate
+
+    return ""
+
+
 def list_branches_matching(pattern: str) -> list[str]:
     """List git branches matching a pattern (e.g., 'eng-71-*')."""
     result = subprocess.run(["git", "branch", "--list", pattern], capture_output=True, text=True)

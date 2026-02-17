@@ -25,6 +25,7 @@ from lisa.git.branch import (
     find_next_suffix,
     get_base_slug,
     get_current_branch,
+    get_default_branch,
     list_branches_matching,
 )
 from lisa.git.commit import get_diff_summary
@@ -480,8 +481,17 @@ def main() -> None:
         sys.exit(128 + sig)
 
     if config.worktree and not config.dry_run:
+        # Get default branch if in spice mode (needed for gs branch create)
+        base_branch = None
+        if config.spice:
+            base_branch = get_default_branch()
+            if not base_branch:
+                error("Could not determine default branch for spice mode")
+                sys.exit(1)
+            log(f"Using {base_branch} as base branch for spice mode")
+
         session_name = "_".join(config.ticket_ids) + "_" + uuid.uuid4().hex[:8]
-        session_worktree_path = create_session_worktree(session_name)
+        session_worktree_path = create_session_worktree(session_name, base_branch)
         if not session_worktree_path:
             error("Failed to create session worktree")
             sys.exit(1)
