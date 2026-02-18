@@ -5,6 +5,7 @@ import json
 import re
 import shlex
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
@@ -49,12 +50,35 @@ def should_run_command(cmd: dict, changed_files: list[str]) -> bool:
     return any(fnmatch.fnmatch(f, p) for f in changed_files for p in expanded)
 
 
+def _run_preflight_command(cmd: dict, timeout: int) -> tuple[str, bool, str]:
+    """Run a single preflight command. Returns (name, passed, output)."""
+    cmd_name = cmd["name"]
+    run_cmd = cmd["run"]
+
+    try:
+        result = subprocess.run(
+            run_cmd,
+            shell=True,  # nosemgrep: subprocess-shell-true
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return cmd_name, False, f"timed out after {timeout}s"
+
+    if result.returncode != 0:
+        output = result.stdout[-3000:] if result.stdout else "(no output)"
+        return cmd_name, False, output
+
+    return cmd_name, True, ""
+
+
 def run_preflight() -> bool:
-    """Run test commands marked for preflight. Returns True if all pass."""
+    """Run test commands marked for preflight in parallel. Returns True if all pass."""
     config = get_config()
 
     test_commands = config.get("tests", [])
-    # Filter test commands by preflight property (default: True)
     preflight_commands = [
         (c, DEFAULT_TEST_TIMEOUT) for c in test_commands if c.get("preflight", True)
     ]
@@ -63,34 +87,27 @@ def run_preflight() -> bool:
         log("Preflight: no commands configured")
         return True
 
-    for cmd, timeout in preflight_commands:
-        cmd_name = cmd["name"]
-        run_cmd = cmd["run"]
-        log(f"Preflight: {cmd_name}...")
+    log(f"Preflight: running {len(preflight_commands)} commands...")
 
-        try:
-            result = subprocess.run(
-                run_cmd,
-                shell=True,  # nosemgrep: subprocess-shell-true
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired:
-            warn(f"Preflight FAIL: {cmd_name} timed out after {timeout}s")
-            return False
+    failures: list[tuple[str, str]] = []
+    with ThreadPoolExecutor(max_workers=len(preflight_commands)) as executor:
+        futures = {
+            executor.submit(_run_preflight_command, cmd, timeout): cmd["name"]
+            for cmd, timeout in preflight_commands
+        }
+        for future in as_completed(futures):
+            name, passed, output = future.result()
+            if passed:
+                success_with_conclusion(f"Preflight PASS: {name}", "", raw=True)
+            else:
+                failures.append((name, output))
 
-        if result.returncode != 0:
-            warn(f"Preflight FAIL: {cmd_name}")
-            # Print last 3000 chars of output for context
-            output = result.stdout[-3000:] if result.stdout else "(no output)"
+    for name, output in failures:
+        warn(f"Preflight FAIL: {name}")
+        if output:
             print(output)
-            return False
 
-        success_with_conclusion(f"Preflight PASS: {cmd_name}", "", raw=True)
-
-    return True
+    return len(failures) == 0
 
 
 def run_format_phase(debug: bool = False) -> bool:

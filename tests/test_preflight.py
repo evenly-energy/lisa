@@ -36,10 +36,9 @@ def test_preflight_runs_all_tests_by_default(mock_config, mock_subprocess):
 
     assert result is True
     assert mock_subprocess.call_count == 2
-    # Verify both commands were called
-    calls = [call[0][0] for call in mock_subprocess.call_args_list]
-    assert calls[0] == "test1"
-    assert calls[1] == "test2"
+    # Order not guaranteed with parallel execution
+    calls = {call[0][0] for call in mock_subprocess.call_args_list}
+    assert calls == {"test1", "test2"}
 
 
 def test_preflight_respects_explicit_true(mock_config, mock_subprocess):
@@ -71,10 +70,9 @@ def test_preflight_skips_false_commands(mock_config, mock_subprocess):
 
     assert result is True
     assert mock_subprocess.call_count == 2
-    # Verify only test1 and test3 were called (test2 skipped)
-    calls = [call[0][0] for call in mock_subprocess.call_args_list]
-    assert calls[0] == "test1"
-    assert calls[1] == "test3"
+    # Order not guaranteed with parallel execution
+    calls = {call[0][0] for call in mock_subprocess.call_args_list}
+    assert calls == {"test1", "test3"}
 
 
 def test_preflight_with_no_commands(mock_config, mock_subprocess):
@@ -103,7 +101,7 @@ def test_preflight_with_all_skipped(mock_config, mock_subprocess):
 
 
 def test_preflight_fails_on_command_failure(mock_config, mock_subprocess):
-    """Test that preflight returns False when a command fails."""
+    """Test that preflight returns False when a command fails. Both commands still run."""
     mock_config.return_value = {
         "tests": [
             {"name": "Test 1", "run": "test1"},
@@ -115,7 +113,7 @@ def test_preflight_fails_on_command_failure(mock_config, mock_subprocess):
     result = run_preflight()
 
     assert result is False
-    assert mock_subprocess.call_count == 1  # Stops on first failure
+    assert mock_subprocess.call_count == 2  # Both run in parallel
 
 
 def test_preflight_fails_on_timeout(mock_config, mock_subprocess):
@@ -139,6 +137,43 @@ def test_preflight_does_not_run_format_commands(mock_config, mock_subprocess):
 
     assert result is True
     assert mock_subprocess.call_count == 1
-    # Verify only test command was called, not format
     calls = [call[0][0] for call in mock_subprocess.call_args_list]
     assert calls[0] == "test1"
+
+
+def test_preflight_reports_all_failures(mock_config, mock_subprocess):
+    """Test that all failures are reported when multiple commands fail."""
+    mock_config.return_value = {
+        "tests": [
+            {"name": "Test 1", "run": "test1"},
+            {"name": "Test 2", "run": "test2"},
+        ]
+    }
+    mock_subprocess.return_value = MagicMock(returncode=1, stdout="fail")
+
+    result = run_preflight()
+
+    assert result is False
+    assert mock_subprocess.call_count == 2
+
+
+def test_preflight_mixed_pass_fail(mock_config, mock_subprocess):
+    """Test that one pass + one fail = overall fail, both ran."""
+    mock_config.return_value = {
+        "tests": [
+            {"name": "Test 1", "run": "test1"},
+            {"name": "Test 2", "run": "test2"},
+        ]
+    }
+
+    def side_effect(cmd, **kwargs):
+        if cmd == "test1":
+            return MagicMock(returncode=0, stdout="")
+        return MagicMock(returncode=1, stdout="Error")
+
+    mock_subprocess.side_effect = side_effect
+
+    result = run_preflight()
+
+    assert result is False
+    assert mock_subprocess.call_count == 2
