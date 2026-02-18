@@ -466,6 +466,7 @@ def main() -> None:
 
     # Session worktree for multi-ticket mode
     session_worktree_path: Optional[str] = None
+    base_branch: Optional[str] = None
     session_original_cwd = os.getcwd()
     session_worktree_cleaned = False
 
@@ -481,17 +482,14 @@ def main() -> None:
         sys.exit(128 + sig)
 
     if config.worktree and not config.dry_run:
-        # Get default branch if in spice mode (needed for gs branch create)
-        base_branch = None
         if config.spice:
             base_branch = get_default_branch()
             if not base_branch:
                 error("Could not determine default branch for spice mode")
                 sys.exit(1)
-            log(f"Using {base_branch} as base branch for spice mode")
 
         session_name = "_".join(config.ticket_ids) + "_" + uuid.uuid4().hex[:8]
-        session_worktree_path = create_session_worktree(session_name, base_branch)
+        session_worktree_path = create_session_worktree(session_name)
         if not session_worktree_path:
             error("Failed to create session worktree")
             sys.exit(1)
@@ -620,9 +618,10 @@ def main() -> None:
 
                 # Create branch and checkout in worktree
                 if config.spice:
-                    checkout = subprocess.run(
-                        ["gs", "branch", "create", branch_name], capture_output=True, text=True
-                    )
+                    cmd = ["gs", "branch", "create", branch_name]
+                    if config.worktree and base_branch:
+                        cmd += ["--target", base_branch]
+                    checkout = subprocess.run(cmd, capture_output=True, text=True)
                     if checkout.returncode != 0:
                         error(f"gs branch create failed: {checkout.stderr}")
                         sys.exit(1)
