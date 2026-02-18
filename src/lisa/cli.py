@@ -34,7 +34,7 @@ from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import RunConfig, WorkContext
 from lisa.phases.conclusion import print_conclusion, run_conclusion_phase
 from lisa.phases.planning import run_planning_phase, sort_by_dependencies
-from lisa.phases.verify import run_preflight, run_review_phase
+from lisa.phases.verify import run_preflight, run_review_phase, run_setup
 from lisa.phases.work import process_ticket_work
 from lisa.state.comment import fetch_state, find_state_comment, save_state
 from lisa.state.git import fetch_git_state
@@ -453,19 +453,12 @@ def main() -> None:
 
     total_start = time.time()
 
-    # Preflight: verify codebase is clean before starting
-    if config.preflight:
-        log("Running preflight checks...")
-        if not run_preflight():
-            error("Preflight failed - fix issues before running lisa")
-            sys.exit(1)
-        success("Preflight passed")
-
     num_tickets = len(config.ticket_ids)
     failed_tickets: list[str] = []
 
     # Session worktree for multi-ticket mode
     session_worktree_path: Optional[str] = None
+    session_preflight_branch: Optional[str] = None
     base_branch: Optional[str] = None
     session_original_cwd = os.getcwd()
     session_worktree_cleaned = False
@@ -498,6 +491,36 @@ def main() -> None:
         atexit.register(cleanup_session_worktree)
         signal.signal(signal.SIGINT, session_signal_handler)
         signal.signal(signal.SIGTERM, session_signal_handler)
+
+        # Create temp branch (detached HEAD causes issues for some test suites)
+        preflight_branch = f"lisa-preflight-{uuid.uuid4().hex[:8]}"
+        checkout = subprocess.run(
+            ["git", "checkout", "-b", preflight_branch], capture_output=True, text=True
+        )
+        if checkout.returncode == 0:
+            session_preflight_branch = preflight_branch
+
+        # Setup: install deps in fresh worktree
+        if not run_setup():
+            error("Setup failed - cannot continue")
+            sys.exit(1)
+
+        # Preflight: verify codebase is clean
+        if config.preflight:
+            log("Running preflight checks...")
+            if not run_preflight():
+                error("Preflight failed - fix issues before running lisa")
+                sys.exit(1)
+            success("Preflight passed")
+
+    else:
+        # No worktree: preflight runs in original dir (no setup needed)
+        if config.preflight:
+            log("Running preflight checks...")
+            if not run_preflight():
+                error("Preflight failed - fix issues before running lisa")
+                sys.exit(1)
+            success("Preflight passed")
 
     # Process tickets serially
     for ticket_idx, ticket_id in enumerate(config.ticket_ids, 1):
@@ -642,6 +665,15 @@ def main() -> None:
                 if not branch_name:
                     error("Failed to create/get branch")
                     sys.exit(1)
+
+        # Delete preflight temp branch now that we're on the ticket branch
+        if session_preflight_branch:
+            subprocess.run(
+                ["git", "branch", "-D", session_preflight_branch],
+                capture_output=True,
+                text=True,
+            )
+            session_preflight_branch = None
 
         # 3. Fetch or initialize state
         state_iteration = 0

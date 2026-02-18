@@ -41,3 +41,9 @@ fallback_tools: >-
   Read Edit Write Grep Glob Skill
   Bash(git:*) Bash(./gradlew:*) Bash(pnpm:*) Bash(npm:*)
   Bash(cd:*) Bash(ls:*) Bash(mkdir:*) Bash(rm:*)
+
+# Setup commands run once after worktree creation, before preflight.
+# Only executed when --worktree is used (fresh worktrees need deps installed).
+setup:
+  - name: "Frontend install"
+    run: "cd frontend && pnpm install"

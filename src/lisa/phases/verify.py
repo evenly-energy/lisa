@@ -25,7 +25,15 @@ from lisa.git.commit import get_changed_files
 from lisa.models.core import Assumption
 from lisa.models.results import TestFailure, VerifyResult
 from lisa.models.state import RunConfig
-from lisa.ui.output import log, success_with_conclusion, warn, warn_with_conclusion
+from lisa.ui.output import (
+    GRAY,
+    NC,
+    log,
+    success,
+    success_with_conclusion,
+    warn,
+    warn_with_conclusion,
+)
 from lisa.ui.timer import LiveTimer
 from lisa.utils.debug import debug_log
 
@@ -72,6 +80,37 @@ def _run_preflight_command(cmd: dict, timeout: int) -> tuple[str, bool, str]:
         return cmd_name, False, output
 
     return cmd_name, True, ""
+
+
+def run_setup() -> bool:
+    """Run setup commands serially after worktree creation. Returns True if all pass."""
+    config = get_config()
+    commands = config.get("setup", [])
+    if not commands:
+        return True
+    log(f"Setup: running {len(commands)} commands...")
+    for cmd in commands:
+        cmd_name = cmd["name"]
+        run_cmd = cmd["run"]
+        log(f"Setup: {cmd_name}...")
+        try:
+            result = subprocess.run(
+                run_cmd,
+                shell=True,  # nosemgrep: subprocess-shell-true
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=300,
+            )
+        except subprocess.TimeoutExpired:
+            warn(f"Setup FAIL: {cmd_name} timed out")
+            return False
+        if result.returncode != 0:
+            warn(f"Setup FAIL: {cmd_name}")
+            print(result.stdout[-3000:] if result.stdout else "(no output)")
+            return False
+        success(f"Setup PASS: {cmd_name}")
+    return True
 
 
 def run_preflight() -> bool:
@@ -675,8 +714,6 @@ def run_coverage_gate(total_start: float, debug: bool = False) -> tuple[bool, st
     timer.stop(print_final=False)
     output = result.stdout + result.stderr
     debug_log(debug, "Coverage gate output", output)
-
-    from lisa.ui.output import GRAY, NC, success
 
     if result.returncode == 0:
         success("Coverage gate PASS (80%+ achieved)")
