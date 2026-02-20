@@ -52,6 +52,7 @@ def run_conclusion_phase(
     branch_name: str,
     total_start: float,
     config: RunConfig,
+    final_review_summary: Optional[str] = None,
 ) -> dict:
     """Generate code review guide for the implementation."""
     prompts = get_prompts()
@@ -100,6 +101,11 @@ def run_conclusion_phase(
         else "No files changed"
     )
 
+    # Format final review context
+    final_review_context = ""
+    if final_review_summary:
+        final_review_context = f"\n## Final Review Summary\n{final_review_summary}\n"
+
     prompt = prompts["conclusion_summary"]["template"].format(
         ticket_id=ticket_id,
         title=title,
@@ -107,6 +113,7 @@ def run_conclusion_phase(
         exploration_context=exploration_context,
         plan_steps_summary=plan_steps_summary,
         assumptions_summary=assumptions_summary,
+        final_review_context=final_review_context,
         changed_files=changed_files,
         commit_log=git_context["commit_log"] or "No commits",
     )

@@ -18,6 +18,7 @@ class WorkState(Enum):
     COMMIT_CHANGES = auto()  # Git commit
     SAVE_STATE = auto()  # Persist to Linear
     ALL_DONE = auto()  # Terminal: run conclusion
+    FINAL_REVIEW = auto()  # Final review with fix loop
     MAX_ITERATIONS = auto()  # Terminal: failed
 
 
@@ -110,6 +111,12 @@ class WorkContext:
     # Verification retry tracking (defaults at end for dataclass compat)
     verify_attempts: int = 0
     max_verify_attempts: int = 3
+
+    # Final review tracking
+    final_review_attempts: int = 0
+    final_review_status: Optional[str] = None  # "APPROVED" | "NEEDS_FIXES" | "SKIPPED"
+    final_review_summary: Optional[str] = None
+    final_review_issues: Optional[str] = None
 
     @property
     def iteration(self) -> int:

@@ -26,7 +26,7 @@ conclusion_summary:
 
     ## Assumptions
     {assumptions_summary}
-
+    {final_review_context}
     ## Changed Files
     {changed_files}
 
@@ -332,44 +332,60 @@ review:
     - Check ticket description for boundary definitions (which APIs, services, modules to use)
     - Code stays within boundaries defined in ticket - doesn't reach into unspecified systems
     - Module boundaries respected (public API vs internal packages)
+    - **API Casing**: Check ticket description for "API casing: ..." specification. If specified, verify all API fields use that casing (snake_case, camelCase, PascalCase, kebab-case). If not specified, default expectation is snake_case for external APIs.
+    - **Field Names**: Request/response fields match API contracts (check against ticket or API docs)
+    - **HTTP Methods**: GET/POST/PUT/DELETE/PATCH usage is semantically correct
+    - **Status Codes**: 200/201/400/404/500 codes match scenarios (success, validation, not found, server error)
+    - **Error Responses**: Error response format matches API error contract
     - If ticket mentions OR code touches NODES API: load `/nodes-api` skill (if available), verify implementation matches spec
     - If ticket mentions OR code touches OpenADR: load `/openadr-api` skill (if available), verify VEN/VTN patterns match spec
     - If ticket mentions OR code touches Axle Energy or Easee devices/state: load `/axle-energy-api` skill (if available), verify integration matches spec
-    - JSON casing matches API expectations (snake_case for external APIs)
 
-    ### 3. Code Quality
-    - Code follows project conventions (check CLAUDE.md if unsure)
-    - No obvious security vulnerabilities
-    - **Tests: Every new public method must have tests. If test files missing for new prod code, set approved=false**
-    - Tests exist and are meaningful (not just coverage padding)
+    ### 3. Test Quality (Not Just Coverage)
+    - **Test Existence**: Every new public method MUST have tests. If test files missing for new prod code, set approved=false
+    - **Happy Path Coverage**: Primary success scenarios are tested
+    - **Error Handling Coverage**: Failure cases and exceptions are tested (not just happy path)
+    - **Edge Cases**: Boundary conditions tested (null inputs, empty arrays, max values, etc)
+    - **Mock Appropriateness**:
+      - Unit tests mock external dependencies appropriately
+      - Integration tests use real implementations where needed
+      - Not overly mocked - tests actually verify behavior, not just mock interactions
+    - **Test Realism**: Tests verify actual behavior, not just coverage padding
+    - **Test Names**: Test names clearly describe what's being tested
+    - If backend changed: Run architecture tests with ./gradlew test --tests "*ArchitectureTest*"
+
+    ### 4. Code Quality
+    - No obvious security vulnerabilities (input validation, SQL injection prevention, XSS)
     - No debug code, orphan TODOs, or commented-out code
     - Error handling is appropriate (no swallowed exceptions)
-    - Run architecture tests if backend changed: ./gradlew test --tests "*ArchitectureTest*"
+    - Code follows project conventions (check CLAUDE.md if unsure)
 
-    ### 4. Assumption Validation (if assumptions provided)
-    - Match check: Does implementation actually follow documented assumptions?
-    - Reasonableness: Were the decisions sensible given the task context?
-    - Scope creep: Any undocumented decisions or work outside planned scope?
+    ### 5. Assumption Validation (if assumptions provided)
+    - **Match check**: Does implementation actually follow documented assumptions?
+    - **Reasonableness**: Were the decisions sensible given the task context? Challenge questionable assumptions.
+    - **Alternatives considered**: Should different approaches have been chosen?
+    - **Risk assessment**: Could any assumptions lead to future issues?
+    - **Scope creep**: Any undocumented decisions or work outside planned scope?
 
     ## Instructions
     - Use git diff to see changes
     - Read the changed files
     - Compare implementation against the task intent above
     - If code interacts with external APIs, use /nodes-api, /openadr-api, or /axle-energy-api skills (if available) to load specs
-    - Check test coverage for new code
+    - Check test coverage for new code - ensure tests are meaningful, not just coverage padding
     - If assumptions were provided, validate each one
 
     ## Output Format
     Output your response as JSON with:
     - approved: true if review passes, false if issues found
     - findings: array of what was checked/found, each with:
-      - category: "intent" | "boundaries" | "quality" | "assumptions"
+      - category: "intent" | "boundaries" | "quality" | "assumptions" | "test_quality" | "api_verification"
       - status: "pass" | "issue" | "fixed"
       - detail: brief description
     - summary: one-line summary (e.g., "intent aligned, 2 quality issues fixed")
 
     Example:
-    {{"approved": true, "findings": [{{"category": "intent", "status": "pass", "detail": "implements task scope correctly"}}, {{"category": "quality", "status": "fixed", "detail": "removed debug println"}}], "summary": "approved with 1 fix applied"}}
+    {{"approved": true, "findings": [{{"category": "intent", "status": "pass", "detail": "implements task scope correctly"}}, {{"category": "test_quality", "status": "pass", "detail": "happy path and error cases tested"}}, {{"category": "api_verification", "status": "pass", "detail": "all fields use snake_case per ticket spec"}}, {{"category": "quality", "status": "fixed", "detail": "removed debug println"}}], "summary": "approved with 1 fix applied"}}
 
     IMPORTANT: If code doesn't match task intent, set approved=false.
 
@@ -444,3 +460,68 @@ coverage_fix:
 
     Focus on: public methods, branches, error paths.
     Do NOT pad with meaningless tests.
+
+final_review:
+  description: Final comprehensive review prompt for skill or standard review
+  template: |
+    All implementation steps complete. Perform final comprehensive review.
+
+    ## Ticket Context
+    **Main Ticket:** {ticket_id} - {title}
+
+    {description}
+
+    {subtasks_context}
+
+    ## Commits Made
+    {commit_messages}
+
+    ## Plan Steps Completed
+    {plan_steps}
+
+    ## Assumptions Made During Implementation
+    {assumptions}
+
+    **IMPORTANT**: Review whether these assumptions were reasonable and well-justified. Challenge any that seem questionable or could lead to issues.
+
+    ## Review ALL Changes For:
+
+    ### 1. Ticket Intent Alignment
+    - Does the complete implementation solve what the ticket asked for?
+    - Any missing functionality from the ticket requirements?
+    - Any scope creep beyond the ticket?
+
+    ### 2. API Boundaries & Specifications
+    - API casing matches ticket specification (check ticket for "API casing: ..." or default to snake_case)
+    - Field names match API contracts
+    - HTTP methods semantically correct (GET for reads, POST for creates, etc)
+    - Status codes appropriate (200/201 success, 400 validation, 404 not found, 500 errors)
+    - Error response format consistent
+
+    ### 3. Test Quality - Be Specific
+    - **Coverage of scenarios**:
+      - Happy path: Primary success scenarios tested
+      - Error handling: Failure and exception paths tested
+      - Edge cases: Null inputs, empty collections, boundary values
+    - **Test realism**:
+      - Not just coverage padding - tests verify actual behavior
+      - Unit tests mock appropriately, integration tests use real implementations
+      - Tests have descriptive names
+    - **Completeness**: Every new public method has tests
+
+    ### 4. Code Quality
+    - No debug code (console.log, println, commented code)
+    - No orphaned TODOs
+    - Security: No obvious vulnerabilities (input validation, injection prevention)
+    - Error handling: No swallowed exceptions
+    - Follows project conventions
+
+    Return JSON:
+    - approved: true if ready, false if issues
+    - action_items: list of specific changes needed (empty if approved), each with:
+      - priority: "critical" (blocks merge - missing tests, broken API contract, security) | "important" (should fix - code quality, minor API issues) | "minor" (nice to have - style, refactoring suggestions)
+      - action: specific change needed with file/location if applicable
+    - summary: one-line outcome
+
+    Example:
+    {{"approved": false, "action_items": [{{"priority": "critical", "action": "Add test for null input in DeviceService.register()"}}, {{"priority": "important", "action": "Fix API casing in DeviceResponse: externalId → external_id"}}, {{"priority": "minor", "action": "Extract retry count magic number to constant"}}], "summary": "1 critical, 2 other issues"}}

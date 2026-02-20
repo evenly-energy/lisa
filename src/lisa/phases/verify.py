@@ -409,6 +409,111 @@ def run_review_phase(
         return {"approved": False, "findings": [], "summary": "review output unparseable"}
 
 
+def try_pr_review_skill(
+    ticket_id: str,
+    title: str,
+    description: str,
+    model: str,
+    yolo: bool,
+    fallback_tools: bool,
+    effort: str,
+    assumptions: list[Assumption],
+    plan_steps: list[dict],
+    subtasks: list[dict],
+    debug: bool = False,
+) -> Optional[dict]:
+    """Try to invoke pr-review-toolkit:review-pr skill.
+
+    Returns dict {approved: bool, issues: str|None, summary: str} on success.
+    Returns None if skill not available or fails.
+    """
+    prompts = get_prompts()
+    schemas = get_schemas()
+
+    # Format assumptions for template
+    assumptions_text = "\n".join(
+        f"- {a.id}: {a.statement}" for a in assumptions if a.selected
+    ) if assumptions else "None"
+
+    # Format plan steps for context
+    plan_steps_text = "\n".join(
+        f"{step['id']}. {step['description']}" for step in plan_steps
+    ) if plan_steps else "None"
+
+    # Format subtasks context with full details
+    subtasks_context = ""
+    if subtasks:
+        subtask_lines = ["**Subtasks:**"]
+        for st in subtasks:
+            # Subtask dict has: {identifier, title, description, ...}
+            st_id = st.get("identifier", st.get("id", ""))
+            st_title = st.get("title", "")
+            st_desc = st.get("description", "")
+            subtask_lines.append(f"\n- **{st_id}**: {st_title}")
+            if st_desc:
+                subtask_lines.append(f"  {st_desc}")
+        subtasks_context = "\n".join(subtask_lines)
+
+    # Get commit messages for THIS ticket only (filter by ticket ID in commit message)
+    try:
+        # Get all commits from current branch
+        result = subprocess.run(
+            ["git", "log", "main..HEAD", "--oneline", "--no-decorate"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # Filter commits that mention this ticket ID
+            all_commits = result.stdout.strip().split("\n")
+            ticket_commits = [c for c in all_commits if ticket_id in c]
+
+            if ticket_commits:
+                commit_messages = "```\n" + "\n".join(ticket_commits) + "\n```"
+            else:
+                commit_messages = "(No commits for this ticket yet)"
+        else:
+            commit_messages = "(No commits yet)"
+    except Exception:
+        commit_messages = "(Could not retrieve commits)"
+
+    # Use final_review template with skill invocation
+    prompt = prompts["final_review"]["template"].format(
+        ticket_id=ticket_id,
+        title=title,
+        description=description,
+        plan_steps=plan_steps_text,
+        assumptions=assumptions_text,
+        subtasks_context=subtasks_context,
+        commit_messages=commit_messages,
+    )
+
+    # Prepend skill invocation instruction
+    prompt = f"""Use the pr-review-toolkit:review-pr skill to perform this review.
+If skill unavailable, return: {{"skill_available": false}}
+
+{prompt}"""
+
+    try:
+        output = work_claude(
+            prompt,
+            model,
+            yolo,
+            fallback_tools,
+            effort,
+            json_schema=schemas["final_review_result"],
+        )
+
+        result = json.loads(output)
+        if not result.get("skill_available"):
+            return None
+        return result
+
+    except (subprocess.CalledProcessError, json.JSONDecodeError, Exception) as e:
+        debug_log(debug, "PR review skill failed", str(e))
+        return None
+
+
 def run_fix_phase(
     issues: str,
     total_start: float,

@@ -194,7 +194,7 @@ review:
         properties:
           category:
             type: string
-            enum: [intent, boundaries, quality, assumptions]
+            enum: [intent, boundaries, quality, assumptions, test_quality, api_verification]
           status:
             type: string
             enum: [pass, issue, fixed]
@@ -219,6 +219,36 @@ review_light:
       type: [string, "null"]
       description: Brief issue description if not approved, null if approved
   required: [approved, issue]
+
+final_review_result:
+  type: object
+  additionalProperties: false
+  properties:
+    skill_available:
+      type: boolean
+      description: Whether pr-review-toolkit skill was available (optional)
+    approved:
+      type: boolean
+      description: Whether final review passed
+    action_items:
+      type: array
+      description: Specific changes needed (empty if approved)
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          priority:
+            type: string
+            enum: [critical, important, minor]
+            description: critical (blocks merge) | important (should fix) | minor (nice to have)
+          action:
+            type: string
+            description: Specific change needed
+        required: [priority, action]
+    summary:
+      type: string
+      description: One-line summary of review outcome
+  required: [approved, summary]
 
 completion_check:
   type: object

@@ -12,7 +12,12 @@ from lisa.clients.linear import fetch_subtask_details
 from lisa.config.prompts import get_prompts
 from lisa.config.schemas import get_schemas
 from lisa.config.settings import get_config
-from lisa.constants import EFFORT_QUICK, EFFORT_WORK, MAX_FIX_ATTEMPTS, resolve_effort
+from lisa.constants import (
+    EFFORT_WORK,
+    MAX_FIX_ATTEMPTS,
+    MAX_ISSUE_REPEATS,
+    resolve_effort,
+)
 from lisa.git.commit import get_changed_files, get_diff_summary, git_commit, summarize_for_commit
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.models.state import WorkContext, WorkState
@@ -25,10 +30,13 @@ from lisa.phases.conclusion import (
 from lisa.phases.verify import (
     run_coverage_fix_phase,
     run_coverage_gate,
+    run_fix_phase,
     run_format_phase,
     run_review_phase,
+    run_test_fix_phase,
     run_test_phase,
     should_run_command,
+    try_pr_review_skill,
     verify_step,
 )
 from lisa.state.comment import save_state
@@ -641,49 +649,224 @@ def _submit_spice_pr(ctx: WorkContext, conclusion: Optional[dict]) -> None:
         success("PR created via git-spice")
 
 
-def handle_all_done(ctx: WorkContext) -> None:
-    """Final review, coverage gate, conclusion."""
-    # Run final comprehensive review with configured model
-    final_review = None
-    if not ctx.config.skip_verify:
-        log("Running final comprehensive review...")
-        final_review = run_review_phase(
+def handle_final_review(ctx: WorkContext) -> WorkState:
+    """Run final review with fix loop.
+
+    Tries pr-review-toolkit:review-pr skill, falls back to run_review_phase.
+    Loops: review → fix → test → commit until approved or max attempts.
+    """
+    log("Starting final comprehensive review...")
+
+    # Track repeated issues
+    issue_counts: dict[str, int] = {}
+
+    for attempt in range(MAX_FIX_ATTEMPTS):
+        ctx.final_review_attempts = attempt + 1
+
+        # Try skill first (use configured model and max effort)
+        review_result = try_pr_review_skill(
+            ctx.ticket_id,
             ctx.title,
             ctx.description,
+            ctx.config.model,
+            ctx.config.yolo,
+            ctx.config.fallback_tools,
+            ctx.config.effort or "high",  # Max effort for final review
+            ctx.all_assumptions,
+            ctx.plan_steps,
+            ctx.subtasks,
+            debug=ctx.config.debug,
+        )
+
+        # Fallback to standard review
+        if review_result is None:
+            if attempt == 0:
+                log("pr-review-toolkit unavailable, using standard review")
+            review_result = run_review_phase(
+                ctx.title,
+                ctx.description,
+                ctx.total_start,
+                ctx.config.model,
+                ctx.config.yolo,
+                ctx.config.fallback_tools,
+                ctx.config.effort or "high",  # Max effort for final review
+                lightweight=False,
+                assumptions=ctx.all_assumptions,
+                debug=ctx.config.debug,
+            )
+
+        # Check approval
+        if review_result["approved"]:
+            ctx.final_review_status = "APPROVED"
+            ctx.final_review_summary = review_result.get("summary", "")
+            ctx.final_review_issues = None
+            success("Final review APPROVED")
+            return WorkState.ALL_DONE
+
+        # Extract action items
+        action_items = review_result.get("action_items", [])
+
+        # Validate action items have required fields
+        action_items = [a for a in action_items if isinstance(a, dict) and "priority" in a and "action" in a]
+
+        # Filter to critical + important (skip minor to avoid infinite loops)
+        critical_items = [a for a in action_items if a.get("priority") == "critical"]
+        important_items = [a for a in action_items if a.get("priority") == "important"]
+        minor_items = [a for a in action_items if a.get("priority") == "minor"]
+
+        to_fix = critical_items + important_items
+
+        if not to_fix:
+            # Only minor items left, approve with note
+            warn(f"{len(minor_items)} minor suggestions skipped")
+            ctx.final_review_status = "APPROVED (minor items skipped)"
+            ctx.final_review_summary = review_result.get("summary", "")
+            return WorkState.ALL_DONE
+
+        # Build summary for tracking repeats
+        summary = review_result.get("summary", "")
+        ctx.final_review_issues = summary  # Store for conclusion
+        issue_key = summary[:100]
+        issue_counts[issue_key] = issue_counts.get(issue_key, 0) + 1
+
+        if issue_counts[issue_key] >= MAX_ISSUE_REPEATS:
+            warn(f"Issue repeated {issue_counts[issue_key]}x, proceeding")
+            ctx.final_review_status = "NEEDS_FIXES (repeated)"
+            return WorkState.ALL_DONE
+
+        # Display action items by priority
+        warn(f"Final review issues (attempt {attempt + 1}/{MAX_FIX_ATTEMPTS}):")
+        if critical_items:
+            log(f"  CRITICAL ({len(critical_items)}):")
+            for item in critical_items[:3]:  # Show first 3
+                log(f"    - {item['action']}")
+        if important_items:
+            log(f"  IMPORTANT ({len(important_items)}):")
+            for item in important_items[:3]:
+                log(f"    - {item['action']}")
+        if minor_items:
+            log(f"  MINOR ({len(minor_items)} - skipped)")
+
+        # Build comprehensive fix context with action checklist
+        assumptions_text = (
+            "\n".join(f"- {a.id}: {a.statement}" for a in ctx.all_assumptions if a.selected)
+            if ctx.all_assumptions
+            else "None"
+        )
+
+        action_checklist = "\n".join(
+            f"- [ ] [{a['priority'].upper()}] {a['action']}" for a in to_fix
+        )
+
+        fix_context = f"""## Original Ticket
+{ctx.title}
+
+{ctx.description}
+
+## Planning Assumptions
+{assumptions_text}
+
+## Action Items to Fix
+{action_checklist}
+
+IMPORTANT: Address ALL action items above. Mark each with [x] when complete."""
+
+        # Fix issues with full context
+        run_fix_phase(
+            fix_context,
             ctx.total_start,
             ctx.config.model,
             ctx.config.yolo,
             ctx.config.fallback_tools,
-            resolve_effort(EFFORT_QUICK, ctx.config.effort),
-            lightweight=False,
-            assumptions=ctx.all_assumptions,
+            ctx.config.effort or "high",
+        )  # Max effort for fixes too
+
+        # Re-test
+        test_failure = run_test_phase(
+            ctx.title,
+            ctx.total_start,
+            ctx.config.model,
+            ctx.config.yolo,
+            ctx.config.fallback_tools,
             debug=ctx.config.debug,
         )
-        if not final_review["approved"]:
-            warn(f"Final review: {final_review['summary'][:100]}...")
+
+        if test_failure:
+            warn(f"Tests failed after fix: {test_failure.summary}")
+            # Try test fix (reuse existing logic from verify_step)
+            run_test_fix_phase(
+                test_failure,
+                "final review fixes",
+                ctx.description,
+                ctx.total_start,
+                ctx.config.model,
+                ctx.config.yolo,
+                ctx.config.fallback_tools,
+                resolve_effort("lightweight", ctx.config.effort),
+            )
+            # Re-test
+            test_failure = run_test_phase(
+                ctx.title,
+                ctx.total_start,
+                ctx.config.model,
+                ctx.config.yolo,
+                ctx.config.fallback_tools,
+                debug=ctx.config.debug,
+            )
+            if test_failure:
+                ctx.final_review_status = "NEEDS_FIXES (tests failing)"
+                return WorkState.ALL_DONE
+
+        # Commit fixes
+        changed = get_changed_files()
+        if changed:
+            run_format_phase(debug=ctx.config.debug)
+            changed = get_changed_files()
+            git_commit(
+                ctx.ticket_id,
+                ctx.iteration,
+                f"final review fixes (attempt {attempt + 1})",
+                push=ctx.config.push,
+                files_to_add=changed,
+                model=ctx.config.model,
+                yolo=ctx.config.yolo,
+                fallback_tools=ctx.config.fallback_tools,
+                spice=ctx.config.spice,
+            )
+
+        # Loop to retry review
+
+    # Max attempts exhausted
+    warn(f"Final review incomplete after {MAX_FIX_ATTEMPTS} attempts")
+    ctx.final_review_status = f"NEEDS_FIXES ({MAX_FIX_ATTEMPTS} attempts)"
+    # Store final summary if we got one
+    if review_result and not ctx.final_review_summary:
+        ctx.final_review_summary = review_result.get("summary", "")
+    return WorkState.ALL_DONE
+
+
+def handle_all_done(ctx: WorkContext) -> None:
+    """Coverage gate, conclusion generation, PR creation."""
 
     # Commit any remaining uncommitted changes
     remaining_changes = get_changed_files()
     if remaining_changes:
-        # Run formatters before final commit
         run_format_phase(debug=ctx.config.debug)
-        remaining_changes = get_changed_files()  # Re-get after formatting
+        remaining_changes = get_changed_files()
 
-        commit_msg = final_review["summary"] if final_review else "final cleanup"
-        log(f"Committing {len(remaining_changes)} remaining changed files...")
-        if not git_commit(
+        commit_msg = "final cleanup"
+        log(f"Committing {len(remaining_changes)} remaining files...")
+        git_commit(
             ctx.ticket_id,
             ctx.iteration,
             commit_msg,
             push=ctx.config.push,
             files_to_add=remaining_changes,
-            allow_no_verify=False,
             model=ctx.config.model,
             yolo=ctx.config.yolo,
             fallback_tools=ctx.config.fallback_tools,
             spice=ctx.config.spice,
-        ):
-            warn("Final commit failed - changes not committed")
+        )
 
     # Run coverage gate if changed files match coverage paths
     all_changed = get_changed_files()
@@ -745,6 +928,7 @@ def handle_all_done(ctx: WorkContext) -> None:
             branch_name=ctx.branch_name,
             total_start=ctx.total_start,
             config=ctx.config,
+            final_review_summary=ctx.final_review_summary,
         )
         print_conclusion(conclusion, ctx.ticket_id, ctx.title)
 
@@ -764,6 +948,13 @@ def handle_all_done(ctx: WorkContext) -> None:
     ticket_elapsed = fmt_duration(time.time() - ctx.total_start)
     ticket_tokens = fmt_tokens(token_tracker.total.total)
     ticket_cost = fmt_cost(token_tracker.total.cost_usd)
+
+    # Show final review status
+    if ctx.final_review_status:
+        if "APPROVED" in ctx.final_review_status:
+            success(f"Final review: {ctx.final_review_status}")
+        else:
+            warn(f"Final review: {ctx.final_review_status}")
 
     # Surface any manual actions required
     manual_actions = [a for a in ctx.all_assumptions if a.statement.startswith("MANUAL:")]
@@ -806,6 +997,7 @@ STATE_HANDLERS: dict[WorkState, Callable[[WorkContext], WorkState]] = {
     WorkState.VERIFY_STEP: handle_verify_step,
     WorkState.COMMIT_CHANGES: handle_commit_changes,
     WorkState.SAVE_STATE: handle_save_state,
+    WorkState.FINAL_REVIEW: handle_final_review,
 }
 
 
@@ -840,6 +1032,11 @@ def process_ticket_work(ctx: WorkContext) -> bool:
             state = handler(ctx)
 
         if state == WorkState.ALL_DONE:
+            # Run final review if verify not skipped
+            if not ctx.config.skip_verify:
+                state = handle_final_review(ctx)
+
+            # Then run conclusion
             handle_all_done(ctx)
             return True
 
