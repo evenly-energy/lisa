@@ -501,14 +501,17 @@ def main() -> None:
             session_preflight_branch = preflight_branch
 
         # Setup: install deps in fresh worktree
-        if not run_setup():
+        with LiveTimer("Setting up work...", total_start, print_final=False):
+            setup_success = run_setup()
+        if not setup_success:
             error("Setup failed - cannot continue")
             sys.exit(1)
 
         # Preflight: verify codebase is clean
         if config.preflight:
-            log("Running preflight checks...")
-            if not run_preflight():
+            with LiveTimer("Running preflight checks...", total_start, print_final=False):
+                preflight_success = run_preflight()
+            if not preflight_success:
                 error("Preflight failed - fix issues before running lisa")
                 sys.exit(1)
             success("Preflight passed")
@@ -516,8 +519,9 @@ def main() -> None:
     else:
         # No worktree: preflight runs in original dir (no setup needed)
         if config.preflight:
-            log("Running preflight checks...")
-            if not run_preflight():
+            with LiveTimer("Running preflight checks...", total_start, print_final=False):
+                preflight_success = run_preflight()
+            if not preflight_success:
                 error("Preflight failed - fix issues before running lisa")
                 sys.exit(1)
             success("Preflight passed")
