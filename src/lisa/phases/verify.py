@@ -7,7 +7,7 @@ import shlex
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from lisa.clients.claude import claude, work_claude
 from lisa.config.prompts import get_prompts
@@ -431,14 +431,18 @@ def try_pr_review_skill(
     schemas = get_schemas()
 
     # Format assumptions for template
-    assumptions_text = "\n".join(
-        f"- {a.id}: {a.statement}" for a in assumptions if a.selected
-    ) if assumptions else "None"
+    assumptions_text = (
+        "\n".join(f"- {a.id}: {a.statement}" for a in assumptions if a.selected)
+        if assumptions
+        else "None"
+    )
 
     # Format plan steps for context
-    plan_steps_text = "\n".join(
-        f"{step['id']}. {step['description']}" for step in plan_steps
-    ) if plan_steps else "None"
+    plan_steps_text = (
+        "\n".join(f"{step['id']}. {step['description']}" for step in plan_steps)
+        if plan_steps
+        else "None"
+    )
 
     # Format subtasks context with full details
     subtasks_context = ""
@@ -504,10 +508,10 @@ If skill unavailable, return: {{"skill_available": false}}
             json_schema=schemas["final_review_result"],
         )
 
-        result = json.loads(output)
-        if not result.get("skill_available"):
+        review_result: dict[str, Any] = json.loads(output)
+        if not review_result.get("skill_available"):
             return None
-        return result
+        return review_result
 
     except (subprocess.CalledProcessError, json.JSONDecodeError, Exception) as e:
         debug_log(debug, "PR review skill failed", str(e))

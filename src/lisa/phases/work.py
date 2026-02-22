@@ -707,7 +707,9 @@ def handle_final_review(ctx: WorkContext) -> WorkState:
         action_items = review_result.get("action_items", [])
 
         # Validate action items have required fields
-        action_items = [a for a in action_items if isinstance(a, dict) and "priority" in a and "action" in a]
+        action_items = [
+            a for a in action_items if isinstance(a, dict) and "priority" in a and "action" in a
+        ]
 
         # Filter to critical + important (skip minor to avoid infinite loops)
         critical_items = [a for a in action_items if a.get("priority") == "critical"]
