@@ -9,6 +9,7 @@ import sys
 import time
 import uuid
 from importlib.metadata import version as get_version
+from pathlib import Path
 from typing import Optional
 
 try:
@@ -64,6 +65,14 @@ def parse_args() -> RunConfig:
         prog="lisa",
         description="Lisa - Looping Implementor Saving Assumptions. Autonomous AI loop driven by Linear tickets.",
         epilog="""
+Commands:
+  lisa init                         Set up .lisa/ config for this project
+  lisa login                        Authenticate with Linear (OAuth)
+  lisa logout                       Clear stored Linear tokens
+  lisa upgrade                      Upgrade to latest release
+  lisa upgrade --main               Upgrade to latest main snapshot
+  lisa upgrade <version>            Pin to specific version (e.g. 0.4.1)
+
 Examples:
   %(prog)s ENG-123                    Run with project permissions
   %(prog)s ENG-123 -n 50              Run 50 iterations
@@ -446,9 +455,34 @@ def main() -> None:
         run_init()
         sys.exit(0)
 
+    if len(sys.argv) > 1 and sys.argv[1] == "upgrade":
+        from lisa.update import run_upgrade
+
+        main = "--main" in sys.argv or "-m" in sys.argv
+        # Find explicit version arg (not a flag, not "upgrade" itself)
+        version = None
+        for arg in sys.argv[2:]:
+            if not arg.startswith("-"):
+                version = arg
+                break
+        run_upgrade(main=main, version=version)
+        sys.exit(0)
+
     config = parse_args()
     validate_env()
     log_config(config)
+
+    if not Path(".lisa/config.yaml").exists():
+        warn("No .lisa/config.yaml found. Run `lisa init` to configure this project.")
+
+    try:
+        from lisa.update import check_for_update
+
+        latest = check_for_update(__version__)
+        if latest:
+            warn(f"Update available: {__version__} -> {latest}  (run: lisa upgrade)")
+    except Exception:
+        pass
 
     if config.spice:
         import shutil
