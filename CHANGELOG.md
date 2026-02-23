@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-02-23
+
+### Added
+- **Git-spice integration**: `--spice` flag for stacked branch management with `gs` commands
+- **Parallel preflight**: Test commands run concurrently via ThreadPoolExecutor, reducing wall-clock time to slowest command
+- **Setup phase**: Automatic dependency installation in fresh worktrees before preflight
+- **Live timers**: Real-time elapsed time display during setup and preflight phases
+- **Prioritized review action items**: Structured action items with critical/important/minor priorities replace unstructured issues text; minor items skipped to avoid infinite fix loops
+- **Preflight per-command control**: `preflight: false` property on test commands to skip expensive tests (e.g., integration) during preflight
+- **PR generation for git-spice**: Auto-generated PR title/body from conclusion data on final submit
+- **Release skill**: `/release` command for automated changelog + tag + GitHub release
+
+### Changed
+- **Test coverage raised to 70%**: 237 new tests across 11 new and 5 expanded test files
+- **Code formatted with ruff and mypy**: Full codebase consistency pass
+
+### Fixed
+- **Worktree cleanup**: Three-phase fallback (force remove → shutil.rmtree → metadata cleanup) fixes "Directory not empty" errors
+- **Worktree + spice compatibility**: Use `gs branch create --target` to avoid detached HEAD failures when combining `--worktree` and `--spice`
+
 ## [0.3.0] - 2026-02-13
 
 ### Added
@@ -68,7 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON schema-based structured output
 - Conclusion/review guide generation
 
-[Unreleased]: https://github.com/evenly-energy/lisa/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/evenly-energy/lisa/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/evenly-energy/lisa/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/evenly-energy/lisa/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/evenly-energy/lisa/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/evenly-energy/lisa/compare/v0.1.0...v0.2.0
