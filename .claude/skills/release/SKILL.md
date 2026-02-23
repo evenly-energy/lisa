@@ -1,7 +1,7 @@
 # /release — Create a new Lisa release
 
 ## Arguments
-Takes a version number: `/release 0.4.0`
+Takes an optional version number: `/release 0.4.0` or just `/release`
 
 ## Dynamic Context
 ```
@@ -14,14 +14,29 @@ $DIFF_STAT = $(git diff ${LAST_TAG}..HEAD --stat 2>/dev/null || echo "no previou
 
 You are releasing Lisa v{version}. Follow these steps exactly:
 
-### 1. Pre-flight checks
+### 1. Version resolution (skip if version argument was provided)
+
+When no version argument is provided:
+- Get commit subjects since last tag: `git log {last_tag}..HEAD --format="%s"`
+- Determine bump type using conventional commit prefixes:
+  - **Major** if any commit has `!` after type (e.g. `feat!:`) or contains `BREAKING CHANGE`
+  - **Minor** if any commit starts with `feat:`
+  - **Patch** otherwise (fix:, refactor:, test:, chore:, docs:, etc.)
+- Parse last tag to get current X.Y.Z, compute suggested next version
+- Use `AskUserQuestion` to present suggestion:
+  - Show the suggested version as the first option
+  - Show 1-line rationale (e.g. "Minor: new features detected (feat: add live timers...)")
+  - Let user accept or type a custom version via "Other"
+- Continue with the resolved version
+
+### 2. Pre-flight checks
 - Verify working tree is clean (`git status --porcelain` must be empty)
 - Verify on `main` branch
 - Verify version argument is valid semver (X.Y.Z)
 - Verify tag `v{version}` does not already exist
 - If any check fails, stop and explain
 
-### 2. Analyze changes since last tag
+### 3. Analyze changes since last tag
 - The dynamic context above gives you commit onelines and diff stats
 - Read **full commit messages** with `git log {last_tag}..HEAD --format="%H%n%s%n%b%n---"`
 - When a commit message is ambiguous or too terse, read the actual changed files to understand what was done
@@ -29,7 +44,7 @@ You are releasing Lisa v{version}. Follow these steps exactly:
 - Omit trivial commits (merge commits, typo fixes) unless they represent meaningful changes
 - Write entries in the same style as existing CHANGELOG.md — bold lead phrase, then description
 
-### 3. Update CHANGELOG.md
+### 4. Update CHANGELOG.md
 - Read current CHANGELOG.md
 - Replace `## [Unreleased]` section with empty `## [Unreleased]` followed by the new version section:
   ```
@@ -51,24 +66,22 @@ You are releasing Lisa v{version}. Follow these steps exactly:
   - Change `[Unreleased]` link to compare against `v{version}` instead of previous tag
   - Add new version link: `[{version}]: https://github.com/evenly-energy/lisa/compare/v{previous}...v{version}`
 
-### 4. Commit
+### 5. Commit
 ```bash
 git add CHANGELOG.md && git commit -m "chore: release v{version}"
 ```
 
-### 5. Tag
+### 6. Tag
 ```bash
 git tag v{version}
 ```
 
-### 6. Push (ask confirmation)
-Ask the user before running:
+### 7. Push
 ```bash
 git push origin main && git push origin v{version}
 ```
 
-### 7. GitHub Release (ask confirmation)
-Ask the user before running:
+### 8. GitHub Release
 ```bash
 gh release create v{version} --generate-notes --title "v{version}"
 ```
