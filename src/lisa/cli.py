@@ -776,7 +776,7 @@ def main() -> None:
                 comment_url = f"{issue_url}{comment_fragment}"
                 plan_summary = ", ".join(s["description"][:30] for s in plan_steps[:3])
                 link = hyperlink(comment_url, "Linear")
-                success_with_conclusion(f"Plan saved to {link}", plan_summary)
+                success_with_conclusion(f"Plan saved to {link}", plan_summary, raw=True)
 
         # If skip_plan or no plan generated, fall back to subtasks as steps
         if not plan_steps and subtasks:

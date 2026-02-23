@@ -407,7 +407,7 @@ def handle_check_completion(ctx: WorkContext) -> WorkState:
         # Step completed
         step_elapsed = ctx.iter_state.get("step_elapsed", "?")
         success_with_conclusion(
-            f"Step {ctx.current_step} done ({step_elapsed})", get_diff_summary()
+            f"Step {ctx.current_step} done ({step_elapsed})", get_diff_summary(), raw=True
         )
         ctx.step_done = True
         return WorkState.VERIFY_STEP
@@ -968,6 +968,7 @@ def handle_all_done(ctx: WorkContext) -> None:
     success_with_conclusion(
         f"All steps complete! ({ticket_elapsed}) | {ticket_tokens} tokens ({ticket_cost})",
         get_diff_summary(),
+        raw=True,
     )
 
 

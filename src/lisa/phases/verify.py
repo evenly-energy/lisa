@@ -396,9 +396,9 @@ def run_review_phase(
             # Full review schema already has findings/summary
             summary = result.get("summary") or "review completed"
             if approved:
-                success_with_conclusion("Review APPROVED", summary)
+                success_with_conclusion("Review APPROVED", summary, raw=True)
             else:
-                warn_with_conclusion("Review NEEDS_FIXES", summary)
+                warn_with_conclusion("Review NEEDS_FIXES", summary, raw=True)
             return {
                 "approved": approved,
                 "findings": result.get("findings", []),
