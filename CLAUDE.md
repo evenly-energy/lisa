@@ -108,3 +108,4 @@ Lisa runs tests for *target projects* (via `verify.py`), not itself. Test comman
 - No push by default (use --push flag)
 - Haiku model: only use for data extraction from text, never for code analysis or review
 - Version derived from git tags via `hatch-vcs` — just `git tag vX.Y.Z` to release
+- The `/release` skill is pre-authorized to commit, tag, push, and create GitHub releases
