@@ -109,3 +109,4 @@ Lisa runs tests for *target projects* (via `verify.py`), not itself. Test comman
 - Haiku model: only use for data extraction from text, never for code analysis or review
 - Version derived from git tags via `hatch-vcs` — just `git tag vX.Y.Z` to release
 - The `/release` skill is pre-authorized to commit, tag, push, and create GitHub releases
+- Commits must use conventional commit prefixes — see `.claude/skills/commit/SKILL.md` for rules. `feat:` is for Lisa CLI changes, `!` requires user confirmation
