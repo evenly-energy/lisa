@@ -440,6 +440,12 @@ def main() -> None:
         print("Logged out. Stored tokens cleared.")
         sys.exit(0)
 
+    if len(sys.argv) > 1 and sys.argv[1] == "init":
+        from lisa.init import run_init
+
+        run_init()
+        sys.exit(0)
+
     config = parse_args()
     validate_env()
     log_config(config)
