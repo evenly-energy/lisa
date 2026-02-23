@@ -16,6 +16,8 @@ class TestResult:
 class TestFailure:
     """Details of a test/lint failure for fix phase."""
 
+    __test__ = False
+
     command_name: str
     output: str
     summary: str = ""

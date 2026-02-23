@@ -1,6 +1,9 @@
-"""Tests for lisa.phases.planning.sort_by_dependencies."""
+"""Tests for lisa.phases.planning."""
 
-from lisa.phases.planning import sort_by_dependencies
+import json
+
+from lisa.models.state import RunConfig
+from lisa.phases.planning import run_planning_phase, sort_by_dependencies
 
 
 class TestSortByDependencies:
@@ -73,3 +76,144 @@ class TestSortByDependencies:
         result = sort_by_dependencies(tasks)
         for t in result:
             assert "_blocked_by" not in t
+
+
+class TestRunPlanningPhase:
+    def _mock_planning(self, mocker, output):
+        mocker.patch(
+            "lisa.phases.planning.get_prompts",
+            return_value={
+                "planning": {
+                    "template": "{ticket_id} {title} {description} {subtask_list} {example_subtask}"
+                },
+            },
+        )
+        mocker.patch(
+            "lisa.phases.planning.get_schemas",
+            return_value={
+                "planning": {"type": "object"},
+            },
+        )
+        mocker.patch("lisa.phases.planning.work_claude", return_value=output)
+        mocker.patch("lisa.phases.planning.LiveTimer")
+
+    def test_parses_steps_and_assumptions(self, mocker):
+        output = json.dumps(
+            {
+                "steps": [
+                    {"id": 1, "ticket": "ENG-1", "description": "Setup config"},
+                    {"id": 2, "ticket": "ENG-1", "description": "Add handler"},
+                ],
+                "assumptions": [
+                    {"id": "1", "selected": True, "statement": "Use Redis", "rationale": "fast"},
+                ],
+                "exploration": {
+                    "patterns": ["REST handler"],
+                    "relevant_modules": ["src/api/"],
+                    "similar_implementations": [{"file": "src/api/users.py", "relevance": "CRUD"}],
+                },
+            }
+        )
+        self._mock_planning(mocker, output)
+        config = RunConfig(ticket_ids=["ENG-1"], max_iterations=10, effort="high", model="opus")
+        steps, assumptions, exploration = run_planning_phase(
+            "ENG-1",
+            "Title",
+            "Desc",
+            [],
+            0.0,
+            "opus",
+            False,
+            False,
+            config,
+        )
+        assert len(steps) == 2
+        assert steps[0]["description"] == "Setup config"
+        assert len(assumptions) == 1
+        assert assumptions[0].statement == "Use Redis"
+        assert exploration is not None
+        assert "REST handler" in exploration.patterns
+
+    def test_json_parse_error_returns_empty(self, mocker):
+        self._mock_planning(mocker, "not valid json{{{")
+        config = RunConfig(ticket_ids=["ENG-1"], max_iterations=10, effort="high", model="opus")
+        steps, assumptions, exploration = run_planning_phase(
+            "ENG-1",
+            "Title",
+            "Desc",
+            [],
+            0.0,
+            "opus",
+            False,
+            False,
+            config,
+        )
+        assert steps == []
+        assert assumptions == []
+        assert exploration is None
+
+    def test_no_exploration(self, mocker):
+        output = json.dumps(
+            {"steps": [{"id": 1, "ticket": "ENG-1", "description": "Do"}], "assumptions": []}
+        )
+        self._mock_planning(mocker, output)
+        config = RunConfig(ticket_ids=["ENG-1"], max_iterations=10, effort="high", model="opus")
+        steps, assumptions, exploration = run_planning_phase(
+            "ENG-1",
+            "Title",
+            "Desc",
+            [],
+            0.0,
+            "opus",
+            False,
+            False,
+            config,
+        )
+        assert len(steps) == 1
+        assert exploration is None
+
+    def test_with_subtasks(self, mocker):
+        output = json.dumps(
+            {"steps": [{"id": 1, "ticket": "ENG-2", "description": "Sub work"}], "assumptions": []}
+        )
+        self._mock_planning(mocker, output)
+        config = RunConfig(ticket_ids=["ENG-1"], max_iterations=10, effort="high", model="opus")
+        subtasks = [{"id": "ENG-2", "title": "Subtask"}]
+        steps, _, _ = run_planning_phase(
+            "ENG-1",
+            "Title",
+            "Desc",
+            subtasks,
+            0.0,
+            "opus",
+            False,
+            False,
+            config,
+        )
+        assert steps[0]["ticket"] == "ENG-2"
+
+    def test_with_prior_assumptions(self, mocker):
+        from lisa.models.core import Assumption
+
+        output = json.dumps(
+            {"steps": [{"id": 1, "ticket": "ENG-1", "description": "Redo"}], "assumptions": []}
+        )
+        self._mock_planning(mocker, output)
+        mock_wc = mocker.patch("lisa.phases.planning.work_claude", return_value=output)
+        config = RunConfig(ticket_ids=["ENG-1"], max_iterations=10, effort="high", model="opus")
+        prior = [Assumption(id="P.1", selected=True, statement="Use Redis")]
+        run_planning_phase(
+            "ENG-1",
+            "Title",
+            "Desc",
+            [],
+            0.0,
+            "opus",
+            False,
+            False,
+            config,
+            prior_assumptions=prior,
+        )
+        # Verify prompt includes prior assumptions
+        prompt_arg = mock_wc.call_args[0][0]
+        assert "Use Redis" in prompt_arg

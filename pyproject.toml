@@ -36,6 +36,7 @@ dev = [
     "mypy>=1.10",
     "types-PyYAML",
     "pre-commit>=3.5",
+    "time-machine>=2.13",
 ]
 
 [project.scripts]
@@ -80,7 +81,7 @@ branch = true
 omit = ["src/lisa/ui/assumptions.py"]
 
 [tool.coverage.report]
-fail_under = 30
+fail_under = 70
 show_missing = true
 exclude_lines = [
     "pragma: no cover",
