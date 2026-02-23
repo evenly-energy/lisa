@@ -82,6 +82,12 @@ git push origin main && git push origin v{version}
 ```
 
 ### 8. GitHub Release
+- Take the changelog section you wrote in step 4 and convert it to GitHub release format:
+  - Replace `### Added` / `### Changed` / `### Fixed` with emoji headers: `## ✨ Added`, `## 🔄 Changed`, `## 🐛 Fixed`
+  - Add a relevant emoji before each bullet's bold lead phrase
+  - Replace `:` separator after bold phrase with ` — ` (em dash)
+  - Append `---` and `**Full Changelog**: https://github.com/evenly-energy/lisa/compare/v{previous}...v{version}` at the bottom
+- Create the release:
 ```bash
-gh release create v{version} --generate-notes --title "v{version}"
+gh release create v{version} --title "v{version}" --notes "<release notes>"
 ```
