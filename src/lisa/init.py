@@ -1,6 +1,9 @@
 """lisa init — interactive project setup for Lisa."""
 
+import importlib.resources
+import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -16,11 +19,91 @@ CONFIG_FILE = LISA_DIR / "config.yaml"
 SKILLS_DIR = Path(".claude") / "skills"
 
 
-# --- Stack detection ---
+# --- Linear auth + team detection ---
 
 
-def _file_exists(*paths: str) -> bool:
-    return any(Path(p).exists() for p in paths)
+def _try_linear_auth() -> bool:
+    """Try to authenticate with Linear. Returns True if authenticated."""
+    if os.environ.get("LINEAR_API_KEY"):
+        return True
+
+    from lisa.auth import get_token, run_login_flow
+
+    if get_token():
+        return True
+
+    log("No Linear authentication found.")
+    log("Options: set LINEAR_API_KEY env var or login via browser.")
+    try:
+        answer = input("  Login via browser now? [Y/n] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+
+    if answer in ("", "y", "yes"):
+        if run_login_flow():
+            success("Logged in to Linear successfully.")
+            return True
+        else:
+            warn("Login failed, continuing without Linear.")
+            return False
+    return False
+
+
+def _detect_ticket_codes(linear_authenticated: bool) -> list:
+    """Detect ticket codes from Linear teams, or ask user manually."""
+    if linear_authenticated:
+        from lisa.clients.linear import fetch_teams
+
+        teams = fetch_teams()
+        if teams is None:
+            warn("Could not fetch teams from Linear.")
+        elif not teams:
+            warn("No teams found in your Linear workspace.")
+        elif len(teams) == 1:
+            code = teams[0]["key"]
+            log(f"Found Linear team: {teams[0]['name']} ({code})")
+            return [code]
+        else:
+            # Multiple teams — ask which to use
+            log("Found Linear teams:")
+            for i, t in enumerate(teams, 1):
+                print(f"  {i}. {t['name']} ({t['key']})")
+            try:
+                answer = input(
+                    "  Use which teams? (comma-separated numbers, or Enter for all): "
+                ).strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return [t["key"] for t in teams]
+
+            if not answer:
+                return [t["key"] for t in teams]
+
+            selected = []
+            for part in answer.split(","):
+                try:
+                    idx = int(part.strip()) - 1
+                    if 0 <= idx < len(teams):
+                        selected.append(teams[idx]["key"])
+                except ValueError:
+                    pass
+            if not selected:
+                warn("Could not parse selection, using all teams")
+            return selected or [t["key"] for t in teams]
+
+    # No auth or fetch failed — ask manually
+    try:
+        codes_input = input("  Enter ticket prefixes (e.g. ENG,FE,BE): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return ["ENG"]
+    if codes_input:
+        return [c.strip().upper() for c in codes_input.split(",") if c.strip()]
+    return ["ENG"]
+
+
+# --- Helpers ---
 
 
 def _read_file(path: str, max_chars: int = 5000) -> Optional[str]:
@@ -30,174 +113,129 @@ def _read_file(path: str, max_chars: int = 5000) -> Optional[str]:
         return None
 
 
-def _detect_package_manager() -> Optional[str]:
-    """Detect JS/TS package manager from lock files."""
-    if Path("pnpm-lock.yaml").exists():
-        return "pnpm"
-    if Path("yarn.lock").exists():
-        return "yarn"
-    if Path("bun.lockb").exists() or Path("bun.lock").exists():
-        return "bun"
-    if Path("package-lock.json").exists():
-        return "npm"
-    if Path("package.json").exists():
-        return "npm"
-    return None
+# --- Claude-based config detection ---
 
 
-def _read_package_json_scripts() -> dict:
-    """Read scripts from package.json if present."""
-    import json
+def _gather_project_files() -> str:
+    """List project files that exist, for context in Claude prompt."""
+    files_to_check = [
+        "README.md",
+        "readme.md",
+        "pyproject.toml",
+        "setup.py",
+        "setup.cfg",
+        "requirements.txt",
+        "package.json",
+        "tsconfig.json",
+        "build.gradle.kts",
+        "build.gradle",
+        "settings.gradle.kts",
+        "pom.xml",
+        "Cargo.toml",
+        "go.mod",
+        "Makefile",
+        "Dockerfile",
+        "docker-compose.yml",
+        ".eslintrc.json",
+        ".eslintrc.js",
+        "eslint.config.js",
+        "ruff.toml",
+        ".ruff.toml",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "package-lock.json",
+        "bun.lockb",
+        "bun.lock",
+    ]
+    found = [f for f in files_to_check if Path(f).exists()]
+    return ", ".join(found) if found else "none detected"
+
+
+def _claude_detect_config() -> Optional[dict]:
+    """Use Claude to generate config.yaml by exploring the project."""
+    from lisa.clients.claude import claude
+    from lisa.config.schemas import get_schemas
+
+    schemas = get_schemas()
+    schema = schemas.get("init_config")
+    if not schema:
+        error("Missing 'init_config' schema — lisa installation may be corrupted")
+        return None
+
+    found_files = _gather_project_files()
+    readme = _read_file("README.md", max_chars=3000) or _read_file("readme.md", max_chars=3000)
+    readme_section = f"\n\n## README.md (excerpt)\n{readme}" if readme else ""
+
+    prompt = f"""Analyze this project and generate a Lisa CI config.
+
+## Project files found
+{found_files}
+{readme_section}
+
+## What to generate
+A config with these sections:
+
+### tests
+Array of test/lint/typecheck commands. Each entry:
+- name: human label (e.g. "Tests", "Lint", "Type check")
+- run: shell command
+- paths: glob patterns for files that trigger this (e.g. ["**/*.py"])
+- filter: (optional) template for running specific failed tests, use {{test}} placeholder
+  e.g. '-k "{{test}}"' for pytest, '--tests "*{{test}}"' for gradle
+- preflight: (optional) set false to skip slow commands in preflight
+
+### format
+Array of auto-format commands. Each entry: name, run, paths.
+
+### coverage
+(optional) Single object with: run (shell command), paths (glob patterns).
+Only include if the project has a coverage tool configured (e.g. kover, coverage.py, c8/istanbul).
+
+### setup
+Array of dependency install commands (only if needed, e.g. for JS projects).
+Each entry: name, run.
+
+### fallback_tools
+Space-separated string of Claude Code tools. Always start with:
+  Read Edit Write Grep Glob Skill Bash(git:*) Bash(cd:*) Bash(ls:*) Bash(mkdir:*) Bash(rm:*)
+Then add build tool permissions like Bash(./gradlew:*), Bash(pnpm:*), Bash(cargo:*), etc.
+
+## Rules
+- Read the actual project files to detect tools (don't guess)
+- Use the correct package manager based on lock files
+- Only include commands for tools that are actually configured
+- For monorepos, detect sub-projects
+- Keep commands concise and correct
+- tests array should not be empty — at minimum detect a test runner"""
 
     try:
-        data = json.loads(Path("package.json").read_text())
-        return data.get("scripts", {})
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return {}
-
-
-def _detect_python_tools() -> dict:
-    """Detect Python test/lint/format tools from pyproject.toml or config files."""
-    tools = {"test": "pytest", "lint": None, "format": None}
-
-    # Check for ruff
-    if _file_exists("ruff.toml", ".ruff.toml"):
-        tools["lint"] = "ruff"
-        tools["format"] = "ruff"
-    elif _file_exists("pyproject.toml"):
-        content = _read_file("pyproject.toml") or ""
-        if "[tool.ruff" in content:
-            tools["lint"] = "ruff"
-            tools["format"] = "ruff"
-        if "[tool.black" in content:
-            tools["format"] = "black"
-        if "[tool.flake8" in content or "[tool.pylint" in content:
-            tools["lint"] = tools.get("lint") or "flake8"
-
-    # Check for mypy
-    if _file_exists("mypy.ini", ".mypy.ini") or (
-        _file_exists("pyproject.toml") and "[tool.mypy" in (_read_file("pyproject.toml") or "")
-    ):
-        tools["typecheck"] = "mypy"
-
-    return tools
-
-
-def detect_stack() -> dict:
-    """Detect project stack from files. Returns config dict."""
-    tests = []
-    format_cmds = []
-    fallback_tools = ["Read", "Edit", "Write", "Grep", "Glob", "Skill"]
-    bash_tools = ["Bash(git:*)"]
-    setup = []
-
-    # --- Python ---
-    if _file_exists("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"):
-        py_tools = _detect_python_tools()
-
-        # Package manager
-        if _file_exists("pyproject.toml") and "uv" in (_read_file("pyproject.toml") or ""):
-            bash_tools.append("Bash(uv:*)")
-        bash_tools.append("Bash(pip:*)")
-        bash_tools.append("Bash(python:*)")
-
-        tests.append({"name": "Tests", "run": "pytest", "paths": ["**/*.py"]})
-
-        if py_tools.get("lint") == "ruff":
-            tests.append({"name": "Lint", "run": "ruff check .", "paths": ["**/*.py"]})
-            format_cmds.append({"name": "Format", "run": "ruff format .", "paths": ["**/*.py"]})
-        elif py_tools.get("lint"):
-            tests.append({"name": "Lint", "run": f"{py_tools['lint']} .", "paths": ["**/*.py"]})
-
-        if py_tools.get("typecheck"):
-            tests.append({"name": "Type check", "run": "mypy .", "paths": ["**/*.py"]})
-
-    # --- JavaScript/TypeScript ---
-    pm = _detect_package_manager()
-    if pm:
-        scripts = _read_package_json_scripts()
-        bash_tools.append(f"Bash({pm}:*)")
-        if pm == "pnpm":
-            bash_tools.append("Bash(npx:*)")
-        elif pm == "npm":
-            bash_tools.append("Bash(npx:*)")
-
-        js_paths = ["**/*.{ts,tsx,js,jsx}"]
-
-        if "test" in scripts:
-            tests.append({"name": "Tests", "run": f"{pm} test", "paths": js_paths})
-        if "lint" in scripts:
-            tests.append({"name": "Lint", "run": f"{pm} run lint", "paths": js_paths})
-        if "lint:check" in scripts:
-            tests[-1]["run"] = f"{pm} run lint:check"
-        if "format" in scripts or "format:check" in scripts:
-            format_cmds.append({"name": "Format", "run": f"{pm} run format", "paths": js_paths})
-        if "typecheck" in scripts or "type-check" in scripts:
-            cmd = "typecheck" if "typecheck" in scripts else "type-check"
-            tests.append({"name": "Type check", "run": f"{pm} run {cmd}", "paths": js_paths})
-
-        setup.append({"name": "Install deps", "run": f"{pm} install"})
-
-    # --- Kotlin/Java Gradle ---
-    if _file_exists("build.gradle.kts", "build.gradle"):
-        bash_tools.append("Bash(./gradlew:*)")
-
-        tests.append(
-            {
-                "name": "Backend tests",
-                "run": "./gradlew test",
-                "paths": ["**/*.kt", "**/*.java"],
-                "filter": '--tests "*{test}"',
-            }
+        result = claude(
+            prompt,
+            model="sonnet",
+            allowed_tools="Read Glob Grep",
+            effort="low",
+            json_schema=schema,
         )
+    except FileNotFoundError:
+        error("Claude CLI not found — install from https://docs.anthropic.com/claude-code")
+        return None
+    except Exception as e:
+        warn(f"Claude config detection failed: {e}")
+        return None
 
-        # Detect ktlint
-        gradle_content = _read_file("build.gradle.kts") or _read_file("build.gradle") or ""
-        if "ktlint" in gradle_content:
-            tests.append({"name": "Lint", "run": "./gradlew ktlintCheck", "paths": ["**/*.kt"]})
-            format_cmds.append(
-                {"name": "Format", "run": "./gradlew ktlintFormat", "paths": ["**/*.kt"]}
-            )
-        if "detekt" in gradle_content:
-            tests.append(
-                {"name": "Static analysis", "run": "./gradlew detekt", "paths": ["**/*.kt"]}
-            )
+    try:
+        data = json.loads(result)
+    except json.JSONDecodeError:
+        warn("Claude returned invalid JSON")
+        return None
 
-    # --- Maven ---
-    if _file_exists("pom.xml") and not _file_exists("build.gradle.kts", "build.gradle"):
-        bash_tools.append("Bash(mvn:*)")
-        tests.append({"name": "Tests", "run": "mvn test", "paths": ["**/*.java", "**/*.kt"]})
-
-    # --- Go ---
-    if _file_exists("go.mod"):
-        bash_tools.append("Bash(go:*)")
-        tests.append({"name": "Tests", "run": "go test ./...", "paths": ["**/*.go"]})
-        tests.append({"name": "Vet", "run": "go vet ./...", "paths": ["**/*.go"]})
-        format_cmds.append({"name": "Format", "run": "gofmt -w .", "paths": ["**/*.go"]})
-
-    # --- Rust ---
-    if _file_exists("Cargo.toml"):
-        bash_tools.append("Bash(cargo:*)")
-        tests.append({"name": "Tests", "run": "cargo test", "paths": ["**/*.rs"]})
-        tests.append({"name": "Clippy", "run": "cargo clippy", "paths": ["**/*.rs"]})
-        format_cmds.append({"name": "Format", "run": "cargo fmt", "paths": ["**/*.rs"]})
-
-    # Common bash tools
-    bash_tools.extend(["Bash(cd:*)", "Bash(ls:*)", "Bash(mkdir:*)", "Bash(rm:*)"])
-
-    # Build fallback_tools string
-    ft = " ".join(fallback_tools) + "\n" + " ".join(bash_tools)
-
-    config: dict = {}
-    if tests:
-        config["tests"] = tests
-    if format_cmds:
-        config["format"] = format_cmds
-    if setup:
-        config["setup"] = setup
-    config["fallback_tools"] = ft
-
-    return config
+    if not isinstance(data, dict):
+        warn(f"Claude returned unexpected type: {type(data).__name__}")
+        return None
+    if not data.get("tests"):
+        warn("Claude returned config with no test commands")
+        return None
+    return data
 
 
 # --- Config preview and editing ---
@@ -230,8 +268,9 @@ def _open_in_editor(content: str) -> Optional[str]:
         tmp_path = f.name
 
     try:
-        result = subprocess.run([editor, tmp_path])
+        result = subprocess.run(shlex.split(editor) + [tmp_path])
         if result.returncode != 0:
+            error(f"Editor '{editor}' exited with code {result.returncode}")
             return None
         return Path(tmp_path).read_text()
     except (OSError, FileNotFoundError):
@@ -244,183 +283,38 @@ def _open_in_editor(content: str) -> Optional[str]:
             pass
 
 
-# --- Skill installation ---
+# --- Skill template loading ---
 
 
-REVIEW_TICKET_SKILL = """\
----
-name: review-ticket
-description: >-
-  Review and validate a Linear ticket with its subtasks against the codebase.
-  Identifies issues, suggests improvements, and outputs diff reports when making changes.
-  Use for ticket refinement and validation.
-user-invocable: true
-allowed-tools: >-
-  mcp__linear__get_issue, mcp__linear__list_issues, mcp__linear__update_issue,
-  mcp__linear__create_issue, Task, Glob, Grep, Read, Skill
----
+def _load_skill_template(name: str) -> Optional[str]:
+    """Load a bundled skill template from defaults/skills/."""
+    try:
+        files = importlib.resources.files("lisa")
+        path = files / "defaults" / "skills" / f"{name}.md"
+        return path.read_text()
+    except (FileNotFoundError, TypeError):
+        dev_path = Path(__file__).parent / "defaults" / "skills" / f"{name}.md"
+        if dev_path.exists():
+            return dev_path.read_text()
+        return None
 
-# Review Ticket
 
-Deeply analyze a Linear ticket and its subtasks for correctness, completeness,
-and alignment with the codebase.
+def _render_skill(template: str, ticket_codes: list) -> str:
+    """Replace {ticket_prefix} placeholders with actual ticket codes."""
+    primary = ticket_codes[0] if ticket_codes else "ENG"
+    return template.replace("{ticket_prefix}", primary)
 
-## Triggers
 
-Activate when user says:
-- "review ENG-123"
-- "validate ENG-45"
-- "check ticket ENG-67"
-- "analyze ENG-89 for issues"
-
-## Process
-
-### 1. Fetch Ticket Hierarchy
-
-Get the target ticket with full details:
-```
-mcp__linear__get_issue(id, includeRelations: true)
-```
-
-Fetch all subtasks:
-```
-mcp__linear__list_issues(parentId: ticket.id)
-```
-
-For each subtask, get full details if description was truncated.
-
-### 2. Explore Codebase (REQUIRED)
-
-**You MUST use the Explore agent before producing any analysis.** This is not optional.
-
-Use Task tool with `subagent_type: Explore` to understand:
-- Existing patterns and conventions in the codebase
-- Related entities, services, events
-- Database migrations and schema
-- API client methods and existing integrations
-
-Focus exploration on ticket content:
-- Event names: search for existing event classes and naming patterns
-- Entity fields: find existing entity patterns and conventions
-- API endpoints: explore controller patterns and routes
-- Database schema: check migration patterns and naming
-
-Example exploration prompt:
-```
-"Explore the codebase for patterns related to [ticket domain]. Find:
-existing events, entities, services, and API patterns. Thoroughness: medium"
-```
-
-### 3. Review Documentation (when applicable)
-
-If the repository has Claude Code skills (`.claude/skills/`) that document API
-contracts, integration patterns, or domain conventions — load them using the
-Skill tool before validating technical details.
-
-This ensures ticket descriptions align with actual API contracts, field names,
-and integration patterns documented in the project.
-
-### 4. Validate Correctness
-
-Check for:
-
-**Naming Consistency**
-- Event names match existing events in the codebase
-- Entity naming follows project conventions
-- Endpoint paths follow existing route patterns
-
-**Technical Accuracy**
-- API payloads match actual API contracts (check JSON casing, field names)
-- Database fields align with entity conventions
-- Referenced methods/classes actually exist in the codebase
-
-**Scope Alignment**
-- Subtasks cover all parent ticket DoD items
-- No overlap or gaps between subtasks
-- Clear boundaries between subtasks
-
-**Architecture Fit**
-- Follows module structure (public API vs internal)
-- Event-driven patterns used correctly where applicable
-- Proper separation of concerns
-
-### 5. Output Analysis Report
-
-Present findings in structured format:
-
-```markdown
-## Ticket Review: ENG-XXX - [Title]
-
-### Sources Consulted
-- **Codebase**: [areas explored, key files found]
-- **Documentation**: [skills loaded, if any]
-
-### Summary
-[1-2 sentence overview]
-
-### Subtasks
-| ID | Title | Status |
-|----|-------|--------|
-| ENG-XX | ... | Backlog |
-
-### Correctness
-- [item] - [status] [details]
-
-### Issues Found
-1. **[Category]**: [description]
-   - Current: [what ticket says]
-   - Should be: [correct version]
-
-### Potential Improvements
-1. [suggestion]
-
-### Missing Items
-1. [gap identified]
-```
-
-### 6. Apply Changes (if requested)
-
-When user approves changes:
-
-1. Update tickets using `mcp__linear__update_issue`
-2. Create new subtasks using `mcp__linear__create_issue`
-3. Output diff report after all changes
-
-## Diff Report Format
-
-After making changes, output a diff view:
-
-```markdown
-## Changes Made
-
-### ENG-XX (Title)
-```diff
-**Section:**
--Old text that was removed
-+New text that was added
-
-Unchanged context line
-```
-
-### NEW: ENG-YY (New Subtask Title)
-Created subtask for [purpose]
-```
-
-## Tips
-
-- Check for JSON casing mismatches (snake_case vs camelCase vs PascalCase)
-- Verify event names against existing event classes in the codebase
-- Cross-reference entity fields with existing entities
-- Look for missing security/observability considerations
-- Ensure idempotency is addressed for webhooks/events
-"""
-
-AVAILABLE_SKILLS = {
-    "review-ticket": {
-        "description": "Review and validate Linear tickets against the codebase before using Lisa",
-        "content": REVIEW_TICKET_SKILL,
-    },
-}
+def _get_available_skills(ticket_codes: list) -> dict:
+    """Build available skills dict with rendered templates."""
+    skills = {}
+    template = _load_skill_template("review-ticket")
+    if template:
+        skills["review-ticket"] = {
+            "description": "Review and validate Linear tickets against the codebase before using Lisa",
+            "content": _render_skill(template, ticket_codes),
+        }
+    return skills
 
 
 def _install_skill(name: str, content: str) -> bool:
@@ -438,9 +332,53 @@ def _install_skill(name: str, content: str) -> bool:
         if answer not in ("y", "yes"):
             return False
 
-    skill_dir.mkdir(parents=True, exist_ok=True)
-    skill_file.write_text(content)
+    try:
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        skill_file.write_text(content)
+    except OSError as e:
+        error(f"Failed to write skill '{name}': {e}")
+        return False
     return True
+
+
+# --- How-to guide ---
+
+
+def _print_howto(ticket_codes: list) -> None:
+    """Print getting-started guide after init."""
+    prefix = ticket_codes[0] if ticket_codes else "ENG"
+    ex = f"{prefix}-123"
+
+    print(f"\n{GREEN}{'=' * 50}{NC}")
+    print(f"{GREEN}Lisa is ready!{NC}\n")
+    print(f"  Config:  {GRAY}{CONFIG_FILE}{NC}")
+    print(f"  Edit:    {GRAY}$EDITOR {CONFIG_FILE}{NC}")
+
+    print(f"\n{YELLOW}Quick start:{NC}\n")
+    print(f"  lisa {ex}                      run a ticket")
+    print(f"  lisa {ex} --worktree            isolated git worktree")
+    print(f"  lisa {ex} --spice --push        enhanced + auto-push")
+    print(f"  lisa {ex} --preflight           validate tests before starting")
+
+    if len(ticket_codes) > 1:
+        multi = " ".join(f"{c}-100" for c in ticket_codes[:2])
+        print(f"  lisa {multi}          run tickets in series")
+    else:
+        print(f"  lisa {ex} {prefix}-124          run tickets in series")
+
+    print(f"\n{YELLOW}Common flags:{NC}\n")
+    print("  --effort low|medium|high       work intensity (default: high)")
+    print("  --skip-verify                  skip test/review phases")
+    print("  --skip-plan                    use subtasks directly as plan")
+    print("  -i / -I                        interactive assumption editing")
+    print("  --dry-run                      preview plan without executing")
+    print("  --conclusion                   generate review guide for branch")
+
+    print(f"\n{YELLOW}Tips:{NC}\n")
+    print("  Create subtasks on your ticket for Lisa to follow as steps")
+    print("  Use --worktree to keep your working tree clean")
+    print("  Check the Lisa comment on your Linear ticket for progress")
+    print()
 
 
 # --- Main init flow ---
@@ -464,16 +402,22 @@ def run_init() -> None:
             log("Aborted.")
             sys.exit(0)
 
-    # Read README for context
-    readme = _read_file("README.md") or _read_file("readme.md")
-    if readme:
-        log(f"Read README.md ({len(readme)} chars) for project context")
-    else:
-        warn("No README.md found — detecting stack from project files only")
+    # --- Linear auth + team detection ---
+    linear_authenticated = _try_linear_auth()
+    ticket_codes = _detect_ticket_codes(linear_authenticated)
+    log(f"Ticket prefixes: {', '.join(ticket_codes)}")
 
-    # Detect stack
+    # --- Config detection ---
     log("Detecting project stack...")
-    config = detect_stack()
+    config = _claude_detect_config()
+    if config:
+        log("Config generated with Claude")
+    else:
+        warn("Claude detection failed — opening editor with empty template")
+        config = {
+            "tests": [{"name": "Tests", "run": "echo 'TODO: add test command'"}],
+            "fallback_tools": "Read Edit Write Grep Glob Skill\nBash(git:*) Bash(cd:*) Bash(ls:*) Bash(mkdir:*) Bash(rm:*)",
+        }
 
     if not config.get("tests"):
         warn("Could not auto-detect test commands")
@@ -519,20 +463,25 @@ def run_init() -> None:
         sys.exit(0)
 
     # Write config
-    LISA_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
-        f.write("# Lisa stack configuration\n")
-        f.write("# See: https://github.com/evenly-energy/lisa#configuration\n")
-        f.write(
-            "# Override chain: bundled defaults < ~/.config/lisa/config.yaml < .lisa/config.yaml\n\n"
-        )
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False, width=120)
+    try:
+        LISA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_FILE, "w") as f:
+            f.write("# Lisa stack configuration\n")
+            f.write("# See: https://github.com/evenly-energy/lisa#configuration\n")
+            f.write(
+                "# Override chain: bundled defaults < ~/.config/lisa/config.yaml < .lisa/config.yaml\n\n"
+            )
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False, width=120)
+    except OSError as e:
+        error(f"Failed to write {CONFIG_FILE}: {e}")
+        sys.exit(1)
     success(f"Wrote {CONFIG_FILE}")
 
     # --- Skills ---
     print(f"\n{GREEN}Skills{NC} — optional Claude Code skills to enhance Lisa usage\n")
 
-    for skill_name, skill_info in AVAILABLE_SKILLS.items():
+    available_skills = _get_available_skills(ticket_codes)
+    for skill_name, skill_info in available_skills.items():
         skill_file = SKILLS_DIR / skill_name / "SKILL.md"
         if skill_file.exists():
             log(f"  {skill_name}: already installed at {skill_file}")
@@ -551,8 +500,5 @@ def run_init() -> None:
         if _install_skill(skill_name, skill_info["content"]):
             success(f"Installed {skill_name} skill at {SKILLS_DIR / skill_name / 'SKILL.md'}")
 
-    # Done
-    print(f"\n{GREEN}Done!{NC} Lisa is configured for this repository.")
-    print(f"  Config: {CONFIG_FILE}")
-    print(f"  Edit anytime: {GRAY}$EDITOR {CONFIG_FILE}{NC}")
-    print(f"  Run: {GRAY}lisa ENG-123{NC}")
+    # --- How-to guide ---
+    _print_howto(ticket_codes)

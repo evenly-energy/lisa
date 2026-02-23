@@ -124,6 +124,20 @@ def fetch_ticket(ticket_id: str, verbose: bool = False) -> Optional[dict]:
     return result
 
 
+def fetch_teams() -> Optional[list]:
+    """Fetch all teams from Linear. Returns list of {key, name}, empty list if none, or None on error."""
+    query = """
+    query { teams { nodes { key name } } }
+    """
+    data = linear_api(query)
+    if data is None:
+        return None
+    teams = data.get("teams")
+    if not teams:
+        return []
+    return teams.get("nodes") or []
+
+
 def fetch_subtask_details(subtask_id: str) -> Optional[dict]:
     """Fetch subtask title and description from Linear.
 

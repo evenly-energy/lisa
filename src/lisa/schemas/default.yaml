@@ -283,6 +283,78 @@ conclusion:
       description: Very short conclusion, max 10 words, lowercase, no period
   required: [text]
 
+init_config:
+  type: object
+  additionalProperties: false
+  properties:
+    tests:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          name:
+            type: string
+            description: Human-readable name (e.g. "Tests", "Lint", "Type check")
+          run:
+            type: string
+            description: Shell command to run
+          paths:
+            type: array
+            items:
+              type: string
+            description: Glob patterns for files that trigger this command
+          filter:
+            type: string
+            description: Template for running specific tests (e.g. '--tests "*{test}"')
+          preflight:
+            type: boolean
+            description: Whether to run in preflight validation (default true)
+        required: [name, run]
+    format:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          name:
+            type: string
+          run:
+            type: string
+          paths:
+            type: array
+            items:
+              type: string
+        required: [name, run]
+    setup:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          name:
+            type: string
+          run:
+            type: string
+        required: [name, run]
+    coverage:
+      type: object
+      additionalProperties: false
+      properties:
+        run:
+          type: string
+          description: Shell command to check code coverage
+        paths:
+          type: array
+          items:
+            type: string
+          description: Glob patterns for files that trigger coverage check
+      required: [run]
+    fallback_tools:
+      type: string
+      description: Space-separated list of Claude Code tools to allow
+  required: [tests, fallback_tools]
+
 conclusion_summary:
   type: object
   additionalProperties: false
