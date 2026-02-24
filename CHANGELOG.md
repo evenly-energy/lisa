@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-02-24
+
+### Added
+- **Preflight GitHub auth check**: Validates git-spice GitHub authentication before pushing, catching auth failures early
+- **Security review section**: Dedicated security checks (input validation, injection risks, auth, secrets, data exposure) in final review prompt
+
+### Changed
+- **Smart commit types**: Commit messages and PR titles now derive conventional commit type (feat, fix, refactor, etc.) from step content instead of always using `feat`
+
+### Fixed
+- **Stacked branches in worktree+spice mode**: Track previous ticket branch across loop iterations so each branch targets its predecessor instead of always targeting main
+- **Compact diff stat in step-done logs**: Replace verbose git diff output with `--shortstat` for clean single-line status messages
+- **Preflight branch cleanup**: Remove stale `lisa-preflight-*` branch refs on early exit in worktree mode
+- **Branch creation speed**: Use `effort=low` for slug generation and wrap with LiveTimer to eliminate perceived hangs
+- **`gs branch create` Vim hang**: Add `--no-commit` flag to prevent Vim opening for empty commit message when there's no TTY
+
 ## [0.5.0] - 2026-02-24
 
 ### Added
@@ -116,7 +132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON schema-based structured output
 - Conclusion/review guide generation
 
-[Unreleased]: https://github.com/evenly-energy/lisa/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/evenly-energy/lisa/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/evenly-energy/lisa/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/evenly-energy/lisa/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/evenly-energy/lisa/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/evenly-energy/lisa/compare/v0.3.0...v0.4.0
