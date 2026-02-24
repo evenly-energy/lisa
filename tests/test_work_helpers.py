@@ -182,7 +182,7 @@ class TestHandleCheckCompletion:
         assert state == WorkState.COMMIT_CHANGES
 
     def test_step_completed(self, sample_work_context, mocker):
-        mocker.patch("lisa.phases.work.get_diff_summary", return_value="2 files changed")
+        mocker.patch("lisa.phases.work.get_diff_stat", return_value="2 files changed")
         sample_work_context.current_step = 2
         sample_work_context.iter_state = {"step_elapsed": "0:30"}
         sample_work_context.work_result = {"step_done": 2}

@@ -30,6 +30,8 @@ When no version argument is provided:
 - Continue with the resolved version
 
 ### 2. Pre-flight checks
+- Run tests locally: `python -m pytest tests/`
+  - If any tests fail, stop and report the failures — do not proceed with the release
 - Verify working tree is clean (`git status --porcelain` must be empty)
 - Verify on `main` branch
 - Verify version argument is valid semver (X.Y.Z)
