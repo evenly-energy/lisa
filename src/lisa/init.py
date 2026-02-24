@@ -18,6 +18,42 @@ LISA_DIR = Path(".lisa")
 CONFIG_FILE = LISA_DIR / "config.yaml"
 SKILLS_DIR = Path(".claude") / "skills"
 
+_MIN_FALLBACK_TOOLS = {
+    "Read",
+    "Edit",
+    "Write",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Bash(git:*)",
+    "Bash(cd:*)",
+    "Bash(ls:*)",
+    "Bash(mkdir:*)",
+    "Bash(rm:*)",
+}
+
+_MIN_FALLBACK_TOOLS_ORDERED = [
+    "Read",
+    "Edit",
+    "Write",
+    "Grep",
+    "Glob",
+    "Skill",
+    "Bash(git:*)",
+    "Bash(cd:*)",
+    "Bash(ls:*)",
+    "Bash(mkdir:*)",
+    "Bash(rm:*)",
+]
+
+
+def _ensure_min_fallback_tools(config: dict) -> dict:
+    """Merge minimum required tools into fallback_tools, preserving extras."""
+    current = set(config.get("fallback_tools", "").split())
+    extras = sorted(current - _MIN_FALLBACK_TOOLS)
+    config["fallback_tools"] = " ".join(_MIN_FALLBACK_TOOLS_ORDERED + extras)
+    return config
+
 
 # --- Linear auth + team detection ---
 
@@ -418,6 +454,8 @@ def run_init() -> None:
             "tests": [{"name": "Tests", "run": "echo 'TODO: add test command'"}],
             "fallback_tools": "Read Edit Write Grep Glob Skill\nBash(git:*) Bash(cd:*) Bash(ls:*) Bash(mkdir:*) Bash(rm:*)",
         }
+
+    config = _ensure_min_fallback_tools(config)
 
     if not config.get("tests"):
         warn("Could not auto-detect test commands")
