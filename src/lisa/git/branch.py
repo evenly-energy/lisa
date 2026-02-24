@@ -99,7 +99,9 @@ def generate_slug(title: str, description: str, max_len: int) -> str:
         title=title,
         description=description[:500] if description else "N/A",
     )
-    result = claude(prompt, model="haiku", allowed_tools="", json_schema=schemas["slug"])
+    result = claude(
+        prompt, model="haiku", allowed_tools="", effort="low", json_schema=schemas["slug"]
+    )
     try:
         data = json.loads(result)
         slug = data.get("slug", "")[:max_len]

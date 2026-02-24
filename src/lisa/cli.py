@@ -672,43 +672,46 @@ def main() -> None:
         branch_name = None  # type: ignore[assignment]
 
         if not config.dry_run:
-            if config.worktree:
-                # Session worktree already exists - just create/checkout branch
-                branch_name, on_ticket_branch = determine_branch_name(ticket_id, title, description)
-                if on_ticket_branch:
-                    prefix = ticket_id.lower()
-                    existing = list_branches_matching(f"{prefix}-*")
-                    base = get_base_slug(branch_name, prefix)
-                    suffix = find_next_suffix(existing, base)
-                    branch_name = f"{base}-{suffix}"
-                    log(f"Creating branch {branch_name}")
-
-                # Create branch and checkout in worktree
-                if config.spice:
-                    cmd = ["gs", "branch", "create", "--no-commit", branch_name]
-                    if config.worktree and base_branch:
-                        cmd += ["--target", base_branch]
-                    checkout = subprocess.run(cmd, capture_output=True, text=True)
-                    if checkout.returncode != 0:
-                        error(f"gs branch create failed: {checkout.stderr}")
-                        sys.exit(1)
-                    success(f"Created spice branch {branch_name}")
-                else:
-                    checkout = subprocess.run(
-                        ["git", "checkout", "-B", branch_name], capture_output=True, text=True
+            with LiveTimer("Preparing ticket...", total_start, print_final=False):
+                if config.worktree:
+                    # Session worktree already exists - just create/checkout branch
+                    branch_name, on_ticket_branch = determine_branch_name(
+                        ticket_id, title, description
                     )
-                    if checkout.returncode != 0:
-                        error(f"git checkout -B failed: {checkout.stderr}")
+                    if on_ticket_branch:
+                        prefix = ticket_id.lower()
+                        existing = list_branches_matching(f"{prefix}-*")
+                        base = get_base_slug(branch_name, prefix)
+                        suffix = find_next_suffix(existing, base)
+                        branch_name = f"{base}-{suffix}"
+                        log(f"Creating branch {branch_name}")
+
+                    # Create branch and checkout in worktree
+                    if config.spice:
+                        cmd = ["gs", "branch", "create", "--no-commit", branch_name]
+                        if config.worktree and base_branch:
+                            cmd += ["--target", base_branch]
+                        checkout = subprocess.run(cmd, capture_output=True, text=True)
+                        if checkout.returncode != 0:
+                            error(f"gs branch create failed: {checkout.stderr}")
+                            sys.exit(1)
+                        success(f"Created spice branch {branch_name}")
+                    else:
+                        checkout = subprocess.run(
+                            ["git", "checkout", "-B", branch_name], capture_output=True, text=True
+                        )
+                        if checkout.returncode != 0:
+                            error(f"git checkout -B failed: {checkout.stderr}")
+                            sys.exit(1)
+                        success(f"Checked out branch {branch_name}")
+                else:
+                    # Normal mode: checkout branch
+                    branch_name = create_or_get_branch(
+                        ticket_id, title, description, spice=config.spice
+                    )  # type: ignore[assignment]
+                    if not branch_name:
+                        error("Failed to create/get branch")
                         sys.exit(1)
-                    success(f"Checked out branch {branch_name}")
-            else:
-                # Normal mode: checkout branch
-                branch_name = create_or_get_branch(
-                    ticket_id, title, description, spice=config.spice
-                )  # type: ignore[assignment]
-                if not branch_name:
-                    error("Failed to create/get branch")
-                    sys.exit(1)
 
         # Delete preflight temp branch now that we're on the ticket branch
         if session_preflight_branch:
