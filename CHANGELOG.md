@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-02-24
+
+### Added
+- **`lisa init` command**: Interactive project setup that detects stack, generates `.lisa/config.yaml`, and installs optional Claude Code skills
+- **Claude-based config detection**: Uses sonnet with Read/Glob/Grep tools to analyze project files and generate accurate test/format/coverage commands
+- **Linear auth during init**: Browser-based OAuth login and automatic team/ticket-prefix discovery at setup time
+- **Skill templates**: Bundled `review-ticket` skill with `{ticket_prefix}` placeholders, installed during init
+- **`lisa upgrade` command**: Self-update with `--main` flag for bleeding edge and version pinning support, plus startup update check against GitHub releases
+- **Subcommands in `--help`**: Help epilog now lists available commands (init, login, logout, upgrade)
+- **Config warning**: Warns when running on a ticket without `.lisa/config.yaml`
+
+### Changed
+- **README rewritten**: Cut from ~400 to ~130 lines focused on what/why/how; removed internal mechanics, added missing flags and subcommands
+- **Test coverage raised to 71%**: 62 new tests across 5 files (state/comment API, conclusion phase, init helpers, verify phase, auth), 549 total
+
+### Fixed
+- **Fallback tools enforcement**: `lisa init` now merges minimum required tools into generated config, preventing Claude from omitting base tools like Read/Edit/Write
+
 ## [0.4.1] - 2026-02-23
 
 ### Added
@@ -98,7 +116,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON schema-based structured output
 - Conclusion/review guide generation
 
-[Unreleased]: https://github.com/evenly-energy/lisa/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/evenly-energy/lisa/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/evenly-energy/lisa/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/evenly-energy/lisa/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/evenly-energy/lisa/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/evenly-energy/lisa/compare/v0.2.1...v0.3.0
