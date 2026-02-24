@@ -504,10 +504,17 @@ def main() -> None:
     session_worktree_cleaned = False
 
     def cleanup_session_worktree() -> None:
-        nonlocal session_worktree_cleaned
+        nonlocal session_worktree_cleaned, session_preflight_branch
         if session_worktree_path and not session_worktree_cleaned:
             session_worktree_cleaned = True
             os.chdir(session_original_cwd)
+            if session_preflight_branch:
+                subprocess.run(
+                    ["git", "branch", "-D", session_preflight_branch],
+                    capture_output=True,
+                    text=True,
+                )
+                session_preflight_branch = None
             remove_worktree(session_worktree_path)
 
     def session_signal_handler(sig: int, frame: object) -> None:
