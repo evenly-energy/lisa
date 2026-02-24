@@ -574,6 +574,7 @@ def main() -> None:
             success("Preflight passed")
 
     # Process tickets serially
+    prev_ticket_branch = None
     for ticket_idx, ticket_id in enumerate(config.ticket_ids, 1):
         if num_tickets > 1:
             print(f"\n{BLUE}{'═' * 60}{NC}")
@@ -697,12 +698,14 @@ def main() -> None:
                     if config.spice:
                         cmd = ["gs", "branch", "create", "--no-commit", branch_name]
                         if config.worktree and base_branch:
-                            cmd += ["--target", base_branch]
+                            target = prev_ticket_branch or base_branch
+                            cmd += ["--target", target]
                         checkout = subprocess.run(cmd, capture_output=True, text=True)
                         if checkout.returncode != 0:
                             error(f"gs branch create failed: {checkout.stderr}")
                             sys.exit(1)
                         success(f"Created spice branch {branch_name}")
+                        prev_ticket_branch = branch_name
                     else:
                         checkout = subprocess.run(
                             ["git", "checkout", "-B", branch_name], capture_output=True, text=True
@@ -711,6 +714,7 @@ def main() -> None:
                             error(f"git checkout -B failed: {checkout.stderr}")
                             sys.exit(1)
                         success(f"Checked out branch {branch_name}")
+                        prev_ticket_branch = branch_name
                 else:
                     # Normal mode: checkout branch
                     branch_name = create_or_get_branch(
