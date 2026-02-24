@@ -178,7 +178,7 @@ def create_or_get_branch(
     # Create the branch
     if spice:
         result = subprocess.run(
-            ["gs", "branch", "create", branch_name], capture_output=True, text=True
+            ["gs", "branch", "create", "--no-commit", branch_name], capture_output=True, text=True
         )
         if result.returncode != 0:
             error(f"gs branch create failed: {result.stderr}")

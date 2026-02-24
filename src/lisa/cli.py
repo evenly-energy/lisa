@@ -685,7 +685,7 @@ def main() -> None:
 
                 # Create branch and checkout in worktree
                 if config.spice:
-                    cmd = ["gs", "branch", "create", branch_name]
+                    cmd = ["gs", "branch", "create", "--no-commit", branch_name]
                     if config.worktree and base_branch:
                         cmd += ["--target", base_branch]
                     checkout = subprocess.run(cmd, capture_output=True, text=True)
