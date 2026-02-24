@@ -92,7 +92,7 @@ How it works:
   5. Picks the first incomplete step from the plan
   6. Runs Claude Code to work on that step (effort controlled by --effort)
   7. When step done: runs tests, code review, fix loop (unless --skip-verify)
-  8. Commits with: feat(lisa): [ENG-456] step N - description
+  8. Commits with: type(lisa): [ENG-456] step N - description
   9. Updates state comment on ticket (checkboxes for each step)
   10. Repeats until max iterations reached
 

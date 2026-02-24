@@ -1,5 +1,6 @@
 """Git commit operations with trailers."""
 
+import re
 import subprocess
 from typing import Optional
 
@@ -65,14 +66,30 @@ def get_diff_summary() -> str:
 
 
 def summarize_for_commit(full_desc: str) -> str:
-    """Ask Claude to generate a short commit title summary."""
+    """Ask Claude to generate a short commit title summary in conventional commit format."""
     prompt = f"""Summarize this step description for a git commit title.
-Max 40 chars. Be concise, no fluff.
+Use conventional commit format: type: summary
+Types: feat, fix, refactor, chore, docs, style, test, perf, ci, build
+Max 50 chars total. Be concise, no fluff.
 
 Step: {full_desc}
 
-Reply with ONLY the summary, nothing else."""
+Reply with ONLY the type: summary, nothing else."""
     return claude(prompt, model="haiku", allowed_tools="").strip()
+
+
+def _extract_commit_type(title: str) -> tuple[str, str]:
+    """Extract conventional commit type from title. Returns (type, cleaned_title).
+
+    Finds the first conventional commit type prefix in the title and extracts it,
+    returning the type and the title with the type prefix removed.
+    E.g. "step 2: feat: add views" -> ("feat", "step 2: add views")
+    """
+    m = re.match(r"^(.*?\b)(feat|fix|refactor|chore|docs|style|test|perf|ci|build):\s*(.+)", title)
+    if m:
+        prefix, ctype, rest = m.groups()
+        return ctype, prefix + rest
+    return "feat", title
 
 
 def format_assumptions_trailer(assumptions: list[Assumption]) -> str:
@@ -133,7 +150,8 @@ def git_commit(
         return False
 
     # Build commit message with metadata (use Lisa-* trailers now)
-    msg = f"feat(lisa): [{commit_ticket_id}] {task_title}"
+    commit_type, clean_title = _extract_commit_type(task_title)
+    msg = f"{commit_type}(lisa): [{commit_ticket_id}] {clean_title}"
     if task_body:
         msg += f"\n\n{task_body}"
     if iter_state:

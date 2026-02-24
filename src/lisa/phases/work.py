@@ -591,15 +591,20 @@ def handle_save_state(ctx: WorkContext) -> WorkState:
 
 def _generate_pr_title(ticket_id: str, conclusion: dict) -> str:
     """Ask haiku to generate a concise PR title from conclusion data."""
+    from lisa.git.commit import _extract_commit_type
+
     context = json.dumps(conclusion, indent=2)
     prompt = f"""Summarize this implementation for a PR title.
-Max 50 chars. Be concise, no fluff.
+Use conventional commit format: type: summary
+Types: feat, fix, refactor, chore, docs, style, test, perf, ci, build
+Max 50 chars total. Be concise, no fluff.
 
 {context}
 
-Reply with ONLY the summary, nothing else."""
+Reply with ONLY the type: summary, nothing else."""
     desc = claude(prompt, model="haiku", allowed_tools="").strip()
-    return f"feat(lisa): [{ticket_id}] {desc}"
+    commit_type, clean_desc = _extract_commit_type(desc)
+    return f"{commit_type}(lisa): [{ticket_id}] {clean_desc}"
 
 
 def _submit_spice_pr(ctx: WorkContext, conclusion: Optional[dict]) -> None:

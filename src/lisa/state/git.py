@@ -18,9 +18,9 @@ def fetch_git_state(branch_name: str, subtask_id: Optional[str] = None) -> dict:
     - last_review_issues: review issues from most recent commit (or None)
     """
     # Search for commits matching subtask or all tralph/lisa commits
-    # Support both legacy "feat(tralph):" and new "feat(lisa):" prefixes
+    # Support both legacy "type(tralph):" and new "type(lisa):" prefixes
     if subtask_id:
-        grep_pattern = f"feat\\((tralph|lisa)\\): \\[{subtask_id}\\]"
+        grep_pattern = f"\\w+\\((tralph|lisa)\\): \\[{subtask_id}\\]"
     else:
         # Match either Lisa-Iteration or Tralph-Iteration trailers
         grep_pattern = "(Lisa|Tralph)-Iteration:"
