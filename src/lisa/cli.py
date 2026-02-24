@@ -46,6 +46,7 @@ from lisa.ui.output import (
     NC,
     YELLOW,
     error,
+    error_with_conclusion,
     hyperlink,
     log,
     success,
@@ -490,6 +491,19 @@ def main() -> None:
         if not shutil.which("gs"):
             error("--spice requires git-spice (gs). Install: brew install git-spice")
             sys.exit(1)
+
+        if config.push:
+            auth_check = subprocess.run(
+                ["gs", "auth", "status", "--forge=github"],
+                capture_output=True,
+                text=True,
+            )
+            if auth_check.returncode != 0:
+                error_with_conclusion(
+                    "git-spice not authenticated — push will fail",
+                    "run 'gs auth login --forge=github' in another terminal to fix",
+                    raw=True,
+                )
 
     total_start = time.time()
 
