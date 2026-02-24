@@ -1,11 +1,15 @@
 """Tests for lisa.phases.conclusion."""
 
+import json
 import subprocess
 
+from lisa.models.core import Assumption, ExplorationFindings
+from lisa.models.state import RunConfig
 from lisa.phases.conclusion import (
     format_conclusion_markdown,
     gather_conclusion_context,
     print_conclusion,
+    run_conclusion_phase,
     save_conclusion_to_linear,
 )
 
@@ -195,3 +199,164 @@ class TestSaveConclusionToLinear:
         call_body = mock_update.call_args[0][1]
         assert "Old guide" not in call_body
         assert "New guide" in call_body
+
+
+class TestRunConclusionPhase:
+    def _make_config(self):
+        return RunConfig(
+            ticket_ids=["ENG-123"],
+            max_iterations=10,
+            effort="high",
+            model="opus",
+        )
+
+    def _setup_mocks(self, mocker, claude_output=None):
+        mocker.patch(
+            "lisa.phases.conclusion.get_prompts",
+            return_value={
+                "conclusion_summary": {
+                    "template": (
+                        "{ticket_id} {title} {description} "
+                        "{exploration_context} {plan_steps_summary} "
+                        "{assumptions_summary} {final_review_context} "
+                        "{changed_files} {commit_log}"
+                    )
+                }
+            },
+        )
+        mocker.patch(
+            "lisa.phases.conclusion.get_schemas",
+            return_value={"conclusion_summary": {"type": "object"}},
+        )
+        mocker.patch(
+            "lisa.phases.conclusion.subprocess.run",
+            side_effect=[
+                subprocess.CompletedProcess([], 0, stdout="src/a.py", stderr=""),
+                subprocess.CompletedProcess([], 0, stdout="abc123 feat: add thing", stderr=""),
+            ],
+        )
+        mock_timer = mocker.MagicMock()
+        mocker.patch("lisa.phases.conclusion.LiveTimer", return_value=mock_timer)
+
+        output = claude_output or json.dumps(
+            {
+                "purpose": "Add feature",
+                "entry_point": "src/main.py",
+                "flow": "1. Start\n2. End",
+                "error_handling": [],
+                "key_review_points": [],
+            }
+        )
+        mocker.patch("lisa.phases.conclusion.work_claude", return_value=output)
+
+    def test_basic_success(self, mocker):
+        self._setup_mocks(mocker)
+        result = run_conclusion_phase(
+            "ENG-123",
+            "Add feature",
+            "desc",
+            [],
+            [],
+            None,
+            "eng-123-branch",
+            0.0,
+            self._make_config(),
+        )
+        assert result["purpose"] == "Add feature"
+        assert result["entry_point"] == "src/main.py"
+
+    def test_with_exploration(self, mocker):
+        self._setup_mocks(mocker)
+        exploration = ExplorationFindings(
+            patterns=["REST handler"],
+            relevant_modules=["src/api/"],
+            similar_implementations=[{"file": "src/users.py", "relevance": "similar"}],
+        )
+        result = run_conclusion_phase(
+            "ENG-123", "Title", "desc", [], [], exploration, "branch", 0.0, self._make_config()
+        )
+        assert result["purpose"] == "Add feature"
+
+    def test_with_assumptions_and_plan_steps(self, mocker):
+        self._setup_mocks(mocker)
+        assumptions = [
+            Assumption(id="P.1", selected=True, statement="Use Redis", rationale="In stack"),
+        ]
+        plan_steps = [{"id": 1, "description": "Setup", "done": True, "ticket": "ENG-123"}]
+        result = run_conclusion_phase(
+            "ENG-123",
+            "Title",
+            "desc",
+            plan_steps,
+            assumptions,
+            None,
+            "branch",
+            0.0,
+            self._make_config(),
+        )
+        assert result["purpose"] == "Add feature"
+
+    def test_with_final_review_summary(self, mocker):
+        self._setup_mocks(mocker)
+        result = run_conclusion_phase(
+            "ENG-123",
+            "Title",
+            "desc",
+            [],
+            [],
+            None,
+            "branch",
+            0.0,
+            self._make_config(),
+            final_review_summary="All good",
+        )
+        assert result["purpose"] == "Add feature"
+
+    def test_json_parse_error(self, mocker):
+        self._setup_mocks(mocker, claude_output="not json at all")
+        result = run_conclusion_phase(
+            "ENG-123", "Title", "desc", [], [], None, "branch", 0.0, self._make_config()
+        )
+        assert result["purpose"] == "Parse error"
+        assert result["entry_point"] == "?"
+
+    def test_empty_git_context(self, mocker):
+        mocker.patch(
+            "lisa.phases.conclusion.get_prompts",
+            return_value={
+                "conclusion_summary": {
+                    "template": (
+                        "{ticket_id} {title} {description} "
+                        "{exploration_context} {plan_steps_summary} "
+                        "{assumptions_summary} {final_review_context} "
+                        "{changed_files} {commit_log}"
+                    )
+                }
+            },
+        )
+        mocker.patch(
+            "lisa.phases.conclusion.get_schemas",
+            return_value={"conclusion_summary": {"type": "object"}},
+        )
+        mocker.patch(
+            "lisa.phases.conclusion.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 1, stdout="", stderr="error"),
+        )
+        mock_timer = mocker.MagicMock()
+        mocker.patch("lisa.phases.conclusion.LiveTimer", return_value=mock_timer)
+        mocker.patch(
+            "lisa.phases.conclusion.work_claude",
+            return_value=json.dumps(
+                {
+                    "purpose": "P",
+                    "entry_point": "E",
+                    "flow": "F",
+                    "error_handling": [],
+                    "key_review_points": [],
+                }
+            ),
+        )
+        result = run_conclusion_phase(
+            "ENG-123", "Title", "desc", [], [], None, "branch", 0.0, self._make_config()
+        )
+        assert result["purpose"] == "P"

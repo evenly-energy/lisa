@@ -2,17 +2,21 @@
 
 import json
 import urllib.error
+from unittest.mock import MagicMock
 
 import time_machine
 
 from lisa.auth import (
+    _CallbackHandler,
     _exchange_code,
     _generate_pkce,
     _load_tokens,
     _refresh_access_token,
+    _run_callback_server,
     _save_tokens,
     clear_tokens,
     get_token,
+    run_login_flow,
 )
 
 
@@ -239,3 +243,125 @@ class TestClearTokens:
 
         monkeypatch.setattr(auth_mod, "TOKEN_FILE", tmp_path / "nope.json")
         clear_tokens()  # Should not raise
+
+
+class TestCallbackHandler:
+    def _make_handler(self, path, expected_state=None):
+        """Create a handler instance bypassing __init__."""
+        handler = _CallbackHandler.__new__(_CallbackHandler)
+        handler.path = path
+        handler.wfile = MagicMock()
+        handler.send_response = MagicMock()
+        handler.send_header = MagicMock()
+        handler.end_headers = MagicMock()
+        handler.send_error = MagicMock()
+        # Reset class state
+        _CallbackHandler.auth_code = None
+        _CallbackHandler.error_msg = None
+        _CallbackHandler.expected_state = expected_state
+        return handler
+
+    def test_success(self):
+        handler = self._make_handler("/callback?code=abc123&state=s1", expected_state="s1")
+        handler.do_GET()
+        assert _CallbackHandler.auth_code == "abc123"
+        assert _CallbackHandler.error_msg is None
+        handler.send_response.assert_called_with(200)
+
+    def test_error_param(self):
+        handler = self._make_handler("/callback?error=access_denied", expected_state="s1")
+        handler.do_GET()
+        assert _CallbackHandler.error_msg == "access_denied"
+        assert _CallbackHandler.auth_code is None
+
+    def test_state_mismatch(self):
+        handler = self._make_handler("/callback?code=abc&state=wrong", expected_state="expected")
+        handler.do_GET()
+        assert _CallbackHandler.error_msg is not None
+        assert "State mismatch" in _CallbackHandler.error_msg
+
+    def test_missing_code(self):
+        handler = self._make_handler("/callback?state=s1", expected_state="s1")
+        handler.do_GET()
+        assert _CallbackHandler.error_msg is not None
+        assert "No authorization code" in _CallbackHandler.error_msg
+
+    def test_wrong_path(self):
+        handler = self._make_handler("/other?code=abc", expected_state="s1")
+        handler.do_GET()
+        handler.send_error.assert_called_with(404)
+
+
+class TestRunCallbackServer:
+    def test_success(self, mocker):
+        mock_server = MagicMock()
+
+        def handle_request():
+            _CallbackHandler.auth_code = "the_code"
+
+        mock_server.handle_request = handle_request
+        mocker.patch("lisa.auth.HTTPServer", return_value=mock_server)
+        _CallbackHandler.auth_code = None
+        _CallbackHandler.error_msg = None
+        result = _run_callback_server("state123")
+        assert result == "the_code"
+
+    def test_error(self, mocker):
+        mock_server = MagicMock()
+
+        def handle_request():
+            _CallbackHandler.error_msg = "denied"
+
+        mock_server.handle_request = handle_request
+        mocker.patch("lisa.auth.HTTPServer", return_value=mock_server)
+        _CallbackHandler.auth_code = None
+        _CallbackHandler.error_msg = None
+        result = _run_callback_server("state123")
+        assert result is None
+
+    def test_no_callback(self, mocker):
+        mock_server = MagicMock()
+        mock_server.handle_request = MagicMock()
+        mocker.patch("lisa.auth.HTTPServer", return_value=mock_server)
+        _CallbackHandler.auth_code = None
+        _CallbackHandler.error_msg = None
+        result = _run_callback_server("state123")
+        assert result is None
+
+
+class TestRunLoginFlow:
+    @time_machine.travel("2026-01-01 12:00:00")
+    def test_success(self, tmp_path, monkeypatch, mocker):
+        import lisa.auth as auth_mod
+
+        monkeypatch.setattr(auth_mod, "TOKEN_DIR", tmp_path)
+        monkeypatch.setattr(auth_mod, "TOKEN_FILE", tmp_path / "auth.json")
+        mocker.patch("lisa.auth.webbrowser.open")
+        mocker.patch("lisa.auth._run_callback_server", return_value="auth_code_123")
+        mocker.patch(
+            "lisa.auth._exchange_code",
+            return_value={"access_token": "at", "refresh_token": "rt", "expires_in": 36000},
+        )
+        result = run_login_flow()
+        assert result is True
+        # Verify tokens were saved
+        saved = json.loads((tmp_path / "auth.json").read_text())
+        assert saved["access_token"] == "at"
+        assert saved["refresh_token"] == "rt"
+
+    def test_no_callback_code(self, mocker):
+        mocker.patch("lisa.auth.webbrowser.open")
+        mocker.patch("lisa.auth._run_callback_server", return_value=None)
+        assert run_login_flow() is False
+
+    def test_exchange_failure(self, mocker):
+        mocker.patch("lisa.auth.webbrowser.open")
+        mocker.patch("lisa.auth._run_callback_server", return_value="code")
+        mocker.patch("lisa.auth._exchange_code", return_value=None)
+        assert run_login_flow() is False
+
+    def test_exchange_no_access_token(self, mocker):
+        mocker.patch("lisa.auth.webbrowser.open")
+        mocker.patch("lisa.auth._run_callback_server", return_value="code")
+        mocker.patch("lisa.auth._exchange_code", return_value={"error": "bad"})
+        assert run_login_flow() is False

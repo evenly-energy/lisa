@@ -3,9 +3,12 @@
 import json
 import subprocess
 
+from lisa.models.core import Assumption
 from lisa.models.results import TestFailure
+from lisa.models.state import RunConfig
 from lisa.phases.verify import (
     run_completion_check,
+    run_coverage_fix_phase,
     run_coverage_gate,
     run_fix_phase,
     run_format_phase,
@@ -14,6 +17,7 @@ from lisa.phases.verify import (
     run_test_fix_phase,
     run_test_phase,
     should_run_command,
+    try_pr_review_skill,
     verify_step,
 )
 
@@ -441,3 +445,214 @@ class TestRunTestFixPhase:
         failure = TestFailure(command_name="pytest", output="FAILED", summary="error")
         run_test_fix_phase(failure, "step", "desc", 0.0, "opus", False, False, "low")
         mock_wc.assert_called_once()
+
+
+class TestTryPrReviewSkill:
+    def _setup_base(self, mocker):
+        mocker.patch(
+            "lisa.phases.verify.get_prompts",
+            return_value={
+                "final_review": {
+                    "template": (
+                        "{ticket_id} {title} {description} "
+                        "{plan_steps} {assumptions} {subtasks_context} "
+                        "{commit_messages}"
+                    )
+                }
+            },
+        )
+        mocker.patch(
+            "lisa.phases.verify.get_schemas",
+            return_value={"final_review_result": {"type": "object"}},
+        )
+
+    def test_skill_available_approved(self, mocker):
+        self._setup_base(mocker)
+        mocker.patch(
+            "lisa.phases.verify.subprocess.run",
+            return_value=subprocess.CompletedProcess(
+                [], 0, stdout="abc123 ENG-1 feat: thing", stderr=""
+            ),
+        )
+        mocker.patch(
+            "lisa.phases.verify.work_claude",
+            return_value=json.dumps({"skill_available": True, "approved": True, "summary": "ok"}),
+        )
+        result = try_pr_review_skill(
+            "ENG-1", "Title", "Desc", "opus", False, False, "high", [], [], []
+        )
+        assert result is not None
+        assert result["approved"] is True
+
+    def test_skill_unavailable(self, mocker):
+        self._setup_base(mocker)
+        mocker.patch(
+            "lisa.phases.verify.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+        )
+        mocker.patch(
+            "lisa.phases.verify.work_claude",
+            return_value=json.dumps({"skill_available": False}),
+        )
+        result = try_pr_review_skill(
+            "ENG-1", "Title", "Desc", "opus", False, False, "high", [], [], []
+        )
+        assert result is None
+
+    def test_json_error(self, mocker):
+        self._setup_base(mocker)
+        mocker.patch(
+            "lisa.phases.verify.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+        )
+        mocker.patch("lisa.phases.verify.work_claude", return_value="not json")
+        result = try_pr_review_skill(
+            "ENG-1", "Title", "Desc", "opus", False, False, "high", [], [], []
+        )
+        assert result is None
+
+    def test_with_assumptions_and_plan_steps(self, mocker):
+        self._setup_base(mocker)
+        mocker.patch(
+            "lisa.phases.verify.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, stdout="abc ENG-1 feat", stderr=""),
+        )
+        mocker.patch(
+            "lisa.phases.verify.work_claude",
+            return_value=json.dumps(
+                {"skill_available": True, "approved": False, "summary": "issues"}
+            ),
+        )
+        assumptions = [Assumption(id="P.1", selected=True, statement="Use Redis")]
+        plan_steps = [{"id": 1, "description": "Setup"}]
+        result = try_pr_review_skill(
+            "ENG-1", "Title", "Desc", "opus", False, False, "high", assumptions, plan_steps, []
+        )
+        assert result is not None
+        assert result["approved"] is False
+
+    def test_with_subtasks(self, mocker):
+        self._setup_base(mocker)
+        mocker.patch(
+            "lisa.phases.verify.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, stdout="abc ENG-1 feat", stderr=""),
+        )
+        mocker.patch(
+            "lisa.phases.verify.work_claude",
+            return_value=json.dumps({"skill_available": True, "approved": True, "summary": "ok"}),
+        )
+        subtasks = [{"identifier": "ENG-2", "title": "Sub", "description": "Sub desc"}]
+        result = try_pr_review_skill(
+            "ENG-1", "Title", "Desc", "opus", False, False, "high", [], [], subtasks
+        )
+        assert result is not None
+
+    def test_git_log_failure(self, mocker):
+        self._setup_base(mocker)
+        mocker.patch(
+            "lisa.phases.verify.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 1, stdout="", stderr="error"),
+        )
+        mocker.patch(
+            "lisa.phases.verify.work_claude",
+            return_value=json.dumps({"skill_available": True, "approved": True, "summary": "ok"}),
+        )
+        result = try_pr_review_skill(
+            "ENG-1", "Title", "Desc", "opus", False, False, "high", [], [], []
+        )
+        assert result is not None
+
+    def test_subprocess_exception(self, mocker):
+        self._setup_base(mocker)
+        mocker.patch(
+            "lisa.phases.verify.subprocess.run",
+            side_effect=Exception("boom"),
+        )
+        mocker.patch(
+            "lisa.phases.verify.work_claude",
+            return_value=json.dumps({"skill_available": True, "approved": True, "summary": "ok"}),
+        )
+        result = try_pr_review_skill(
+            "ENG-1", "Title", "Desc", "opus", False, False, "high", [], [], []
+        )
+        assert result is not None
+
+
+class TestRunCoverageFixPhase:
+    def test_calls_work_claude(self, mocker):
+        mocker.patch(
+            "lisa.phases.verify.get_prompts",
+            return_value={
+                "coverage_fix": {"template": "fix coverage {changed_files} {error_output}"},
+            },
+        )
+        mock_wc = mocker.patch("lisa.phases.verify.work_claude", return_value="done")
+        mocker.patch("lisa.phases.verify.LiveTimer")
+        config = RunConfig(ticket_ids=["ENG-1"], max_iterations=10, effort="high", model="opus")
+        run_coverage_fix_phase(["src/a.py"], "coverage 60%", 0.0, config)
+        mock_wc.assert_called_once()
+
+    def test_empty_inputs(self, mocker):
+        mocker.patch(
+            "lisa.phases.verify.get_prompts",
+            return_value={
+                "coverage_fix": {"template": "fix coverage {changed_files} {error_output}"},
+            },
+        )
+        mock_wc = mocker.patch("lisa.phases.verify.work_claude", return_value="done")
+        mocker.patch("lisa.phases.verify.LiveTimer")
+        config = RunConfig(ticket_ids=["ENG-1"], max_iterations=10, effort="high", model="opus")
+        run_coverage_fix_phase([], "", 0.0, config)
+        mock_wc.assert_called_once()
+
+
+class TestRunCompletionCheckWithStepFiles:
+    def _setup(self, mocker):
+        mocker.patch(
+            "lisa.phases.verify.get_prompts",
+            return_value={
+                "completion_check": {"template": "check {step_id} {step_desc} {files_context}"},
+            },
+        )
+        mocker.patch(
+            "lisa.phases.verify.get_schemas",
+            return_value={"completion_check": {"type": "object"}},
+        )
+        mocker.patch("lisa.phases.verify.LiveTimer")
+
+    def test_with_files(self, mocker):
+        self._setup(mocker)
+        mock_wc = mocker.patch(
+            "lisa.phases.verify.work_claude",
+            return_value=json.dumps({"complete": True, "missing": None}),
+        )
+        step_files = [
+            {
+                "op": "create",
+                "path": "src/handler.py",
+                "template": "rest_handler",
+                "detail": "new route",
+            },
+        ]
+        result = run_completion_check(
+            1, "add handler", step_files, 0.0, "opus", False, False, "low"
+        )
+        assert result["complete"] is True
+        # Verify files context was formatted into the prompt
+        prompt_arg = mock_wc.call_args[0][0]
+        assert "CREATE" in prompt_arg
+        assert "src/handler.py" in prompt_arg
+        assert "template: rest_handler" in prompt_arg
+        assert "detail: new route" in prompt_arg
+
+    def test_files_without_extras(self, mocker):
+        self._setup(mocker)
+        mock_wc = mocker.patch(
+            "lisa.phases.verify.work_claude",
+            return_value=json.dumps({"complete": True, "missing": None}),
+        )
+        step_files = [{"op": "modify", "path": "src/routes.py"}]
+        run_completion_check(1, "update routes", step_files, 0.0, "opus", False, False, "low")
+        prompt_arg = mock_wc.call_args[0][0]
+        assert "MODIFY" in prompt_arg
+        assert "src/routes.py" in prompt_arg

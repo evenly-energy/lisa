@@ -3,12 +3,18 @@
 from lisa.models.core import Assumption, ExplorationFindings
 from lisa.state.comment import (
     build_state_comment,
+    create_comment,
+    fetch_state,
+    find_state_comment,
     format_assumptions_markdown,
     format_exploration_markdown,
     get_state_header,
     get_state_headers,
+    list_comments,
     parse_assumptions_markdown,
     parse_state_comment,
+    save_state,
+    update_comment,
 )
 
 
@@ -278,3 +284,199 @@ class TestBuildStateComment:
     def test_current_step_dash_when_none(self):
         body = build_state_comment("eng-1-test", 1, None, [], [])
         assert "| Current step | - |" in body
+
+
+class TestListComments:
+    def test_success(self, mocker):
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={
+                "issue": {
+                    "comments": {
+                        "nodes": [
+                            {"id": "c1", "body": "hello"},
+                            {"id": "c2", "body": "world"},
+                        ]
+                    }
+                }
+            },
+        )
+        result = list_comments("issue-1")
+        assert len(result) == 2
+        assert result[0]["id"] == "c1"
+
+    def test_none_response(self, mocker):
+        mocker.patch("lisa.state.comment.linear_api", return_value=None)
+        assert list_comments("issue-1") == []
+
+    def test_no_issue(self, mocker):
+        mocker.patch("lisa.state.comment.linear_api", return_value={"issue": None})
+        assert list_comments("issue-1") == []
+
+    def test_no_comments_key(self, mocker):
+        mocker.patch("lisa.state.comment.linear_api", return_value={"issue": {}})
+        assert list_comments("issue-1") == []
+
+
+class TestFindStateComment:
+    def test_finds_lisa_header(self, mocker):
+        header = get_state_header("eng-1-branch")
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={
+                "issue": {"comments": {"nodes": [{"id": "c1", "body": f"{header}\nsome content"}]}}
+            },
+        )
+        result = find_state_comment("issue-1", "eng-1-branch")
+        assert result is not None
+        assert result["id"] == "c1"
+
+    def test_finds_tralph_legacy(self, mocker):
+        headers = get_state_headers("eng-1-branch")
+        tralph_header = headers[1]  # legacy tralph header
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={
+                "issue": {
+                    "comments": {"nodes": [{"id": "c2", "body": f"{tralph_header}\ncontent"}]}
+                }
+            },
+        )
+        result = find_state_comment("issue-1", "eng-1-branch")
+        assert result is not None
+        assert result["id"] == "c2"
+
+    def test_no_match(self, mocker):
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={
+                "issue": {"comments": {"nodes": [{"id": "c1", "body": "unrelated comment"}]}}
+            },
+        )
+        assert find_state_comment("issue-1", "eng-1-branch") is None
+
+    def test_empty_list(self, mocker):
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={"issue": {"comments": {"nodes": []}}},
+        )
+        assert find_state_comment("issue-1", "eng-1-branch") is None
+
+
+class TestCreateComment:
+    def test_success(self, mocker):
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={"commentCreate": {"success": True, "comment": {"id": "new-c1"}}},
+        )
+        assert create_comment("issue-1", "body text") == "new-c1"
+
+    def test_failure(self, mocker):
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={"commentCreate": {"success": False}},
+        )
+        assert create_comment("issue-1", "body text") is None
+
+    def test_none_response(self, mocker):
+        mocker.patch("lisa.state.comment.linear_api", return_value=None)
+        assert create_comment("issue-1", "body") is None
+
+
+class TestUpdateComment:
+    def test_success(self, mocker):
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={"commentUpdate": {"success": True}},
+        )
+        assert update_comment("c1", "new body") is True
+
+    def test_failure(self, mocker):
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={"commentUpdate": {"success": False}},
+        )
+        assert update_comment("c1", "new body") is False
+
+    def test_none_response(self, mocker):
+        mocker.patch("lisa.state.comment.linear_api", return_value=None)
+        assert update_comment("c1", "body") is False
+
+
+class TestFetchState:
+    def test_returns_parsed_state(self, mocker):
+        header = get_state_header("eng-1-branch")
+        body = (
+            f"{header}\n\n"
+            "- [x] **1**: Setup config\n"
+            "- [ ] **2**: Add endpoint ← current\n\n"
+            "| Field | Value |\n"
+            "|-------|-------|\n"
+            "| Current step | 2 |\n"
+            "✅ P.1. Use Redis\n"
+        )
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={"issue": {"comments": {"nodes": [{"id": "c1", "body": body}]}}},
+        )
+        result = fetch_state("uuid-1", "eng-1-branch")
+        assert result is not None
+        assert result["comment_id"] == "c1"
+        assert result["current_step"] == 2
+        assert len(result["plan_steps"]) == 2
+        assert len(result["assumptions"]) == 1
+
+    def test_no_comment_found(self, mocker):
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={"issue": {"comments": {"nodes": []}}},
+        )
+        assert fetch_state("uuid-1", "eng-1-branch") is None
+
+
+class TestSaveState:
+    def test_creates_new(self, mocker):
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={"commentCreate": {"success": True, "comment": {"id": "new-id"}}},
+        )
+        result = save_state("uuid-1", "eng-1-branch", 1)
+        assert result == "new-id"
+
+    def test_updates_existing(self, mocker):
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={"commentUpdate": {"success": True}},
+        )
+        result = save_state("uuid-1", "eng-1-branch", 2, comment_id="existing-id")
+        assert result == "existing-id"
+
+    def test_create_failure(self, mocker):
+        mocker.patch("lisa.state.comment.linear_api", return_value=None)
+        result = save_state("uuid-1", "eng-1-branch", 1)
+        assert result is None
+
+    def test_update_failure(self, mocker):
+        mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={"commentUpdate": {"success": False}},
+        )
+        result = save_state("uuid-1", "eng-1-branch", 2, comment_id="c1")
+        assert result is None
+
+    def test_log_entry_prepended(self, mocker):
+        mock_api = mocker.patch(
+            "lisa.state.comment.linear_api",
+            return_value={"commentCreate": {"success": True, "comment": {"id": "c1"}}},
+        )
+        save_state(
+            "uuid-1",
+            "eng-1-branch",
+            1,
+            log_entry="started work",
+            existing_log=["previous entry"],
+        )
+        # The body passed to linear_api should contain both log entries
+        call_body = mock_api.call_args[0][1]["body"]
+        assert "started work" in call_body
+        assert "previous entry" in call_body

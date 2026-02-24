@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """Generate coverage-badge.json for shields.io endpoint badge."""
 
 import json
