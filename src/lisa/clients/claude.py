@@ -1,6 +1,7 @@
 """Claude CLI client wrapper."""
 
 import json
+import os
 import subprocess
 from typing import Optional
 
@@ -68,7 +69,8 @@ def claude(
     if json_schema:
         cmd.extend(["--json-schema", json.dumps(json_schema)])
 
-    result = subprocess.run(cmd, input=prompt, capture_output=True, text=True)
+    env = {**os.environ, "LISA_SESSION": "1"}
+    result = subprocess.run(cmd, input=prompt, capture_output=True, text=True, env=env)
 
     if result.returncode != 0:
         error(f"Claude CLI exited with code {result.returncode}")

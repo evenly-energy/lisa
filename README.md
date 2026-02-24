@@ -116,6 +116,10 @@ lisa TICKET_ID [TICKET_ID ...] [options]
 | `--verbose` | Show raw API responses |
 | `-v, --version` | Show version |
 
+## Hook Suppression
+
+Lisa sets `LISA_SESSION=1` in the environment of its Claude subprocess calls. Use this in your `~/.claude/settings.json` hooks to distinguish autonomous Lisa runs from interactive sessions.
+
 ## Development
 
 ```bash
