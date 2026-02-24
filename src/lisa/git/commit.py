@@ -32,6 +32,19 @@ def get_changed_files() -> list[str]:
     return files
 
 
+def get_diff_stat() -> str:
+    """Get compact one-line diff stat for display (e.g. '3 files (+45/-12)')."""
+    stat = subprocess.run(["git", "diff", "--shortstat", "HEAD"], capture_output=True, text=True)
+    if stat.returncode == 0 and stat.stdout.strip():
+        return stat.stdout.strip()
+    # Fallback: check for untracked files
+    status = subprocess.run(["git", "status", "--short"], capture_output=True, text=True)
+    if status.returncode == 0 and status.stdout.strip():
+        count = len(status.stdout.strip().split("\n"))
+        return f"{count} new file{'s' if count != 1 else ''}"
+    return "no changes"
+
+
 def get_diff_summary() -> str:
     """Get diff content for Haiku to summarize."""
     # Get diff stat and actual diff for context

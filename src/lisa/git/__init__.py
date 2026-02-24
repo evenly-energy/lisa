@@ -11,6 +11,7 @@ from lisa.git.branch import (
 from lisa.git.commit import (
     format_assumptions_trailer,
     get_changed_files,
+    get_diff_stat,
     get_diff_summary,
     git_commit,
     summarize_for_commit,
@@ -27,6 +28,7 @@ __all__ = [
     "create_or_get_branch",
     # Commit
     "get_changed_files",
+    "get_diff_stat",
     "get_diff_summary",
     "summarize_for_commit",
     "git_commit",

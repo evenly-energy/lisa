@@ -1,9 +1,6 @@
 """Terminal output helpers with colors and hyperlinks."""
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
+from typing import Any, Callable, Optional
 
 # Colors
 RED = "\033[0;31m"
@@ -15,12 +12,12 @@ MAGENTA = "\033[0;35m"
 NC = "\033[0m"
 
 # Module-level references set at runtime to avoid circular imports
-_claude_fn = None
-_prompts = None
-_schemas = None
+_claude_fn: Optional[Callable[..., str]] = None
+_prompts: Optional[dict[str, Any]] = None
+_schemas: Optional[dict[str, Any]] = None
 
 
-def _init_conclusion_deps():
+def _init_conclusion_deps() -> None:
     """Lazy-init dependencies for conclusion generation."""
     global _claude_fn, _prompts, _schemas
     if _claude_fn is None:
@@ -62,12 +59,15 @@ def generate_conclusion(context: str) -> str:
     import json
 
     _init_conclusion_deps()
+    assert _claude_fn is not None and _prompts is not None and _schemas is not None
 
-    prompt = _prompts["conclusion"]["template"].format(context=context[:MAX_CONTEXT_CHARS])  # type: ignore[index]
-    result = _claude_fn(prompt, model="haiku", allowed_tools="", json_schema=_schemas["conclusion"])  # type: ignore[misc,index]
+    prompt = _prompts["conclusion"]["template"].format(context=context[:MAX_CONTEXT_CHARS])
+    result = _claude_fn(
+        prompt, model="haiku", allowed_tools="", effort="low", json_schema=_schemas["conclusion"]
+    )
     try:
         data = json.loads(result)
-        return data.get("text", "")[:80]  # type: ignore[no-any-return]
+        return str(data.get("text", ""))[:80]
     except json.JSONDecodeError:
         return result.strip()[:80]
 
