@@ -379,7 +379,7 @@ review:
     Output your response as JSON with:
     - approved: true if review passes, false if issues found
     - findings: array of what was checked/found, each with:
-      - category: "intent" | "boundaries" | "quality" | "assumptions" | "test_quality" | "api_verification"
+      - category: "intent" | "boundaries" | "quality" | "assumptions" | "test_quality" | "api_verification" | "security"
       - status: "pass" | "issue" | "fixed"
       - detail: brief description
     - summary: one-line summary (e.g., "intent aligned, 2 quality issues fixed")
@@ -512,9 +512,15 @@ final_review:
     ### 4. Code Quality
     - No debug code (console.log, println, commented code)
     - No orphaned TODOs
-    - Security: No obvious vulnerabilities (input validation, injection prevention)
     - Error handling: No swallowed exceptions
     - Follows project conventions
+
+    ### 5. Security
+    - Input validation: user/external input sanitized before use?
+    - Injection risks: SQL queries parameterized? Template rendering escaped? Command args quoted?
+    - Auth/authz: access control checks present where needed?
+    - Secrets: no hardcoded credentials, tokens, or API keys?
+    - Data exposure: no sensitive data in logs, error messages, or API responses?
 
     Return JSON:
     - approved: true if ready, false if issues

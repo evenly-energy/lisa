@@ -194,7 +194,7 @@ review:
         properties:
           category:
             type: string
-            enum: [intent, boundaries, quality, assumptions, test_quality, api_verification]
+            enum: [intent, boundaries, quality, assumptions, test_quality, api_verification, security]
           status:
             type: string
             enum: [pass, issue, fixed]
