@@ -607,6 +607,23 @@ Reply with ONLY the type: summary, nothing else."""
     return f"{commit_type}(lisa): [{ticket_id}] {clean_desc}"
 
 
+def _gs_submit(extra_args: list[str]) -> subprocess.CompletedProcess:
+    """Try gs stack submit, fall back to gs branch submit. Returns final result."""
+    base = ["--no-draft"] + extra_args
+    result = subprocess.run(["gs", "stack", "submit"] + base, capture_output=True, text=True)
+    if result.returncode != 0:
+        stack_stderr = result.stderr
+        result = subprocess.run(["gs", "branch", "submit"] + base, capture_output=True, text=True)
+        if result.returncode != 0:
+            result = subprocess.CompletedProcess(
+                result.args,
+                result.returncode,
+                stdout=result.stdout,
+                stderr=f"stack: {stack_stderr}\nbranch: {result.stderr}",
+            )
+    return result
+
+
 def _submit_spice_pr(ctx: WorkContext, conclusion: Optional[dict]) -> None:
     """Create PR via git-spice with title/body from conclusion data."""
     if conclusion and conclusion.get("purpose"):
@@ -634,22 +651,14 @@ def _submit_spice_pr(ctx: WorkContext, conclusion: Optional[dict]) -> None:
         body_parts.append(f"---\n[{ctx.ticket_id}]({ctx.issue_url})")
         body = "\n\n".join(body_parts)
 
-        result = subprocess.run(
-            ["gs", "branch", "submit", "--title", title, "--body", body],
-            capture_output=True,
-            text=True,
-        )
+        result = _gs_submit(["--title", title, "--body", body])
     else:
         # No conclusion — use ticket title + fill from commits
         title = f"feat(lisa): [{ctx.ticket_id}] {ctx.title[:60]}"
-        result = subprocess.run(
-            ["gs", "branch", "submit", "--title", title, "--fill"],
-            capture_output=True,
-            text=True,
-        )
+        result = _gs_submit(["--title", title, "--fill"])
 
     if result.returncode != 0:
-        warn(f"gs branch submit (PR) failed: {result.stderr}")
+        warn(f"gs submit (PR) failed: {result.stderr}")
     else:
         success("PR created via git-spice")
 
