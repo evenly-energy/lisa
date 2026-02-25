@@ -58,7 +58,7 @@ def _ensure_min_fallback_tools(config: dict) -> dict:
 # --- Linear auth + team detection ---
 
 
-def _try_linear_auth() -> bool:
+def _try_linear_auth(yes: bool = False) -> bool:
     """Try to authenticate with Linear. Returns True if authenticated."""
     if os.environ.get("LINEAR_API_KEY"):
         return True
@@ -70,6 +70,16 @@ def _try_linear_auth() -> bool:
 
     log("No Linear authentication found.")
     log("Options: set LINEAR_API_KEY env var or login via browser.")
+
+    if yes:
+        log("  Attempting browser login (--yes)")
+        if run_login_flow():
+            success("Logged in to Linear successfully.")
+            return True
+        else:
+            warn("Login failed, continuing without Linear.")
+            return False
+
     try:
         answer = input("  Login via browser now? [Y/n] ").strip().lower()
     except (EOFError, KeyboardInterrupt):
@@ -86,7 +96,7 @@ def _try_linear_auth() -> bool:
     return False
 
 
-def _detect_ticket_codes(linear_authenticated: bool) -> list:
+def _detect_ticket_codes(linear_authenticated: bool, yes: bool = False) -> list:
     """Detect ticket codes from Linear teams, or ask user manually."""
     if linear_authenticated:
         from lisa.clients.linear import fetch_teams
@@ -105,6 +115,11 @@ def _detect_ticket_codes(linear_authenticated: bool) -> list:
             log("Found Linear teams:")
             for i, t in enumerate(teams, 1):
                 print(f"  {i}. {t['name']} ({t['key']})")
+
+            if yes:
+                log("  Selecting all teams (--yes)")
+                return [t["key"] for t in teams]
+
             try:
                 answer = input(
                     "  Use which teams? (comma-separated numbers, or Enter for all): "
@@ -129,6 +144,10 @@ def _detect_ticket_codes(linear_authenticated: bool) -> list:
             return selected or [t["key"] for t in teams]
 
     # No auth or fetch failed — ask manually
+    if yes:
+        log('  Using default ticket prefix "ENG" (--yes)')
+        return ["ENG"]
+
     try:
         codes_input = input("  Enter ticket prefixes (e.g. ENG,FE,BE): ").strip()
     except (EOFError, KeyboardInterrupt):
@@ -353,20 +372,23 @@ def _get_available_skills(ticket_codes: list) -> dict:
     return skills
 
 
-def _install_skill(name: str, content: str) -> bool:
+def _install_skill(name: str, content: str, yes: bool = False) -> bool:
     """Write a skill file to .claude/skills/<name>/SKILL.md."""
     skill_dir = SKILLS_DIR / name
     skill_file = skill_dir / "SKILL.md"
 
     if skill_file.exists():
-        warn(f"Skill '{name}' already exists at {skill_file}")
-        try:
-            answer = input("  Overwrite? [y/N] ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return False
-        if answer not in ("y", "yes"):
-            return False
+        if yes:
+            log(f"  Overwriting existing skill '{name}' (--yes)")
+        else:
+            warn(f"Skill '{name}' already exists at {skill_file}")
+            try:
+                answer = input("  Overwrite? [y/N] ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return False
+            if answer not in ("y", "yes"):
+                return False
 
     try:
         skill_dir.mkdir(parents=True, exist_ok=True)
@@ -420,27 +442,30 @@ def _print_howto(ticket_codes: list) -> None:
 # --- Main init flow ---
 
 
-def run_init() -> None:
+def run_init(yes: bool = False) -> None:
     """Interactive project setup for Lisa."""
     print(f"\n{GREEN}Lisa Init{NC} — configure Lisa for this repository\n")
 
     # Check if already initialized
     if CONFIG_FILE.exists():
-        warn(f"Found existing {CONFIG_FILE}")
-        try:
-            answer = (
-                input("  Re-initialize? This will overwrite the config. [y/N] ").strip().lower()
-            )
-        except (EOFError, KeyboardInterrupt):
-            print()
-            sys.exit(0)
-        if answer not in ("y", "yes"):
-            log("Aborted.")
-            sys.exit(0)
+        if yes:
+            log(f"Found existing {CONFIG_FILE}, re-initializing (--yes)")
+        else:
+            warn(f"Found existing {CONFIG_FILE}")
+            try:
+                answer = (
+                    input("  Re-initialize? This will overwrite the config. [y/N] ").strip().lower()
+                )
+            except (EOFError, KeyboardInterrupt):
+                print()
+                sys.exit(0)
+            if answer not in ("y", "yes"):
+                log("Aborted.")
+                sys.exit(0)
 
     # --- Linear auth + team detection ---
-    linear_authenticated = _try_linear_auth()
-    ticket_codes = _detect_ticket_codes(linear_authenticated)
+    linear_authenticated = _try_linear_auth(yes=yes)
+    ticket_codes = _detect_ticket_codes(linear_authenticated, yes=yes)
     log(f"Ticket prefixes: {', '.join(ticket_codes)}")
 
     # --- Config detection ---
@@ -465,12 +490,15 @@ def run_init() -> None:
     _print_config_preview(config)
 
     # Ask user to confirm
-    try:
-        print(f"  {GRAY}(Y)es to write, (e)dit to open in $EDITOR, (n)o to cancel{NC}")
-        answer = input(f"  Write to {CONFIG_FILE}? [Y/e/n] ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        sys.exit(0)
+    if yes:
+        answer = ""
+    else:
+        try:
+            print(f"  {GRAY}(Y)es to write, (e)dit to open in $EDITOR, (n)o to cancel{NC}")
+            answer = input(f"  Write to {CONFIG_FILE}? [Y/e/n] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            sys.exit(0)
 
     if answer in ("e", "edit"):
         yaml_str = _config_to_yaml(config)
@@ -526,16 +554,16 @@ def run_init() -> None:
             continue
 
         print(f"  {YELLOW}{skill_name}{NC}: {skill_info['description']}")
-        try:
-            answer = input(f"  Install {skill_name} skill? [Y/n] ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
+        if not yes:
+            try:
+                answer = input(f"  Install {skill_name} skill? [Y/n] ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if answer in ("n", "no"):
+                continue
 
-        if answer in ("n", "no"):
-            continue
-
-        if _install_skill(skill_name, skill_info["content"]):
+        if _install_skill(skill_name, skill_info["content"], yes=yes):
             success(f"Installed {skill_name} skill at {SKILLS_DIR / skill_name / 'SKILL.md'}")
 
     # --- How-to guide ---

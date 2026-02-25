@@ -453,7 +453,8 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "init":
         from lisa.init import run_init
 
-        run_init()
+        yes = "--yes" in sys.argv or "-y" in sys.argv
+        run_init(yes=yes)
         sys.exit(0)
 
     if len(sys.argv) > 1 and sys.argv[1] == "upgrade":
