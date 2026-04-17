@@ -36,7 +36,7 @@ dev = [
     "mypy>=1.10",
     "types-PyYAML",
     "pre-commit>=3.5",
-    "time-machine>=2.13",
+    "time-machine>=3.2.0",
 ]
 
 [project.scripts]
