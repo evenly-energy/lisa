@@ -35,7 +35,7 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
     "types-PyYAML",
-    "pre-commit>=3.5",
+    "pre-commit>=4.5.1",
     "time-machine>=2.13",
 ]
 
